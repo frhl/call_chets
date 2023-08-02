@@ -2,8 +2,8 @@ CC = gcc
 CFLAGS = -Wall -O2
 INCLUDES = -I/usr/local/include
 LIBS = -L/usr/local/lib -lhts
-TARGET = annotate_vcf
-SOURCE = main.cpp
+TARGET = get_phased_sites
+SOURCE = get_phased_sites.cpp
 
 all: $(TARGET)
 
