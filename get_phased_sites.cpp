@@ -67,7 +67,7 @@ int main(int argc, char *argv[]) {
             }
             // Heterozygous
             else if (a1 != a2) {
-                printf("%s\t%d\t%s:%d:%s:%s\t%s\n", header->samples[i], variant_counter+1, bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[a1], rec->d.allele[a2], a1 < a2 ? "1|0" : "0|1");
+                printf("%s\t%d\t%s:%d:%s:%s\t%s\n", header->samples[i], variant_counter+1, bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1], a1 < a2 ? "1|0" : "0|1");
             }
         }
         if (gt_arr) free(gt_arr);
