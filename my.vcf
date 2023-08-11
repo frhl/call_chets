@@ -1,7 +1,0 @@
-##fileformat=VCFv4.2
-##contig=<ID=20>
-##FORMAT=<ID=DS,Number=1,Type=Float,Description="Dosage">
-#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	HG00101	HG00102	HG00200	HG00201	HG00202	HG00300
-20	1	geneA	A	B	.	.	.	DS	2	2	1	1	2	0
-20	2	geneB	A	B	.	.	.	DS	2	2	1	1	2	0
-20	3	geneC	A	B	.	.	.	DS	2	2	2	1	2	0
