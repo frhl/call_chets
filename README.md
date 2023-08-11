@@ -27,6 +27,10 @@ todo: duplicate lines with alt/ref flipped
 3. Convert into a VCF file.
 ```
 ./encode_vcf chets.txt tests/samples.txt
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	HG00100	HG00101	HG00102	HG00200	HG00201	HG00202	HG00300
+#.	.	geneA	.	.	.	.	.	.	2	2	2	1	1	2	0
+#.	.	geneB	.	.	.	.	.	.	1	2	2	1	1	2	0
+#.	.	geneC	.	.	.	.	.	.	1	2	2	2	1	2	0
 
 ```
 
