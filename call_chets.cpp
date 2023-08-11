@@ -56,20 +56,29 @@ int main(int argc, char* argv[]) {
                 else if (genotype == "1|1") count11++;
             }
             
-            std::cout << count10 << ":" << count01 << ":" << count11 << "\t";
+            //std::cout << count10 << ":" << count01 << ":" << count11 << "\t";
+	    std::string callValue;
+	    int dosage = 0;
 
             // Determine the "call" value
             if ((count10 > 0 && count01 == 0 && count11 == 0) || (count10 == 0 && count01 > 0 && count11 == 0)) {
-                std::cout << "het\t";
+                callValue = "het";
+	        dosage = 1;
             } else if (count10 == 0 && count01 == 0 && count11 > 0) {
-                std::cout << "hom\t";
-            } else if (count10 >= 0 && count01 >= 0 && count11 > 0) {
-                std::cout << "hom+het\t";
+                callValue = "hom" ;
+		dosage = 2;
+	    } else if (count10 >= 0 && count01 >= 0 && count11 > 0) {
+	    	callValue = "hom+het";
+		dosage = 2;
 	    } else if (count10 > 0 && count01 > 0 && count11 == 0) {
-                std::cout << "chet\t";
-            } else {
-                std::cout << "Unknown\t";
-            }
+            	callValue="chet";
+		dosage = 2;
+	    } else {
+            	callValue = "na";
+		dosage = 0;
+	    }
+
+	    std::cout << callValue << "\t" << dosage << "\t"; // Print call and dosage
 
             for (size_t i = 0; i < genePair.second.size(); ++i) {
                 std::cout << genePair.second[i];
@@ -83,7 +92,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
-
-
-
 
