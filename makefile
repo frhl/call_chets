@@ -4,10 +4,10 @@ INCLUDES = -I/usr/local/include
 LIBS = -L/usr/local/lib -lhts
 TARGET1 = get_phased_sites
 TARGET2 = call_chets
-TARGET3 = long_to_wide
+TARGET3 = encode_vcf
 SOURCE1 = get_phased_sites.cpp
 SOURCE2 = call_chets.cpp
-SOURCE3 = long_to_wide.cpp
+SOURCE3 = encode_vcf.cpp
 
 all: $(TARGET1) $(TARGET2) $(TARGET3)
 
