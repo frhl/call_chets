@@ -3,6 +3,8 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <sstream>
+
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {
@@ -39,11 +41,15 @@ int main(int argc, char* argv[]) {
         sampleGeneVariants[sample][variantToGene[variant]].push_back(variant + "-" + genotype);
     }
 
+
     // Print the output
     for (const auto &samplePair : sampleGeneVariants) {
         for (const auto &genePair : samplePair.second) {
-            std::cout << samplePair.first << "\t" << genePair.first << "\t";
-            
+	    std::stringstream ss(variant);
+            std::string chromosome;
+            std::getline(ss, chromosome, ':');  // Split at the first ':'
+            std::cout << samplePair.first << "\t" << chromosome << "\t" << genePair.first << "\t";
+ 
             // Counting configurations
             int count10 = 0;
             int count01 = 0;

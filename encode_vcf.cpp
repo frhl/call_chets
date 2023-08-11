@@ -6,14 +6,13 @@
 #include <sstream>
 
 int main(int argc, char* argv[]) {
-    if (argc != 4) {
-        std::cerr << "Usage: " << argv[0] << " <Long Format File> <Sample List File> <Output File>" << std::endl;
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <Long Format File> <Sample List File>" << std::endl;
         return 1;
     }
 
     std::ifstream longFile(argv[1]);
     std::ifstream sampleFile(argv[2]);
-    std::ofstream outputFile(argv[3]);
 
     // Collect all samples into a set
     std::set<std::string> samples;
@@ -30,38 +29,50 @@ int main(int argc, char* argv[]) {
     }
 
     std::map<std::string, std::map<std::string, int>> geneSampleDosage;
+    
+    // Map the chrom
+    std::map<std::string, std::string> geneToChromosome;
 
     // Process long format file
-    std::string line, sample, gene, configuration, variantInfo;
+    std::string line, sample, chromosome, gene, configuration, variantInfo;
+    std::set<std::string> contigs;
     int dosage;
     while (std::getline(longFile, line)) {
         std::istringstream iss(line);
-        iss >> sample >> gene >> configuration >> dosage >> variantInfo;
-
+        iss >> sample >> chromosome >> gene >> configuration >> dosage >> variantInfo;
+	geneToChromosome[gene] = chromosome;
         geneSampleDosage[gene][sample] = dosage;
+	contigs.insert(chromosome);
     }
 
     // Print the output header
-    outputFile << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
-    for (const auto& sampleName : samples) {
-        outputFile << "\t" << sampleName;
+    std::cout << "##fileformat=VCFv4.2\n";
+    std::cout << "##FILTER=<ID=PASS,Description=\"All filters passed\">";
+    for (const auto& chr : contigs) {
+        std::cout << "##contig=<ID=" << chr << ">\n";
     }
-    outputFile << std::endl;
-
+    std::cout << "##FORMAT=<ID=DS,Number=1,Type=Float,Description=\"Dosage\">\n";
+    std::cout << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
+    for (const auto& sampleName : samples) {
+        std::cout << "\t" << sampleName;
+    }
+    std::cout << std::endl;
+    int rowIndex = 1;
     // Print the output data
     for (const auto &genePair : geneSampleDosage) {
-        outputFile << ".\t.\t" << genePair.first << "\t.\t.\t.\t.\t.\t.";  // Repeated columns filled with dots, except for ID which gets the gene name
+        std::cout << geneToChromosome[genePair.first] << "\t" << rowIndex << "\t" << genePair.first << "\tA\tB\t.\t.\t.\tDS";  // Repeated columns filled with dots, except for ID which gets the gene name
 
         for (const auto& sample : samples) {
-            outputFile << "\t";
+            std::cout << "\t";
 
             if (genePair.second.find(sample) != genePair.second.end()) {
-                outputFile << genePair.second.at(sample);
+                std::cout << genePair.second.at(sample);
             } else {
-                outputFile << "0";  // Default to 0 if sample-gene combo doesn't exist
+                std::cout << "0";  // Default to 0 if sample-gene combo doesn't exist
             }
         }
-        outputFile << std::endl;
+        std::cout << std::endl;
+        rowIndex++; 
     }
 
     return 0;
