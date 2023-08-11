@@ -8,8 +8,19 @@ todo: duplicate lines with alt/ref flipped
 
 
 ### Usage
-'''
-./get_phased_sites test/out.vcf 0.50 | head
-'''
 
+1. Get a list of gene-sample sites.
+```
+./get_phased_sites test/out.vcf 0.50 test/trio.vcf > phased_sites.txt
+```
+
+2. Get dosage by gene and call compound heterozygotes
+```
+./call_chets phased_sites.txt test/gene_map.txt > chets.txt
+```
+
+3. Convert gene dosages into VCF
+```
+
+```
 
