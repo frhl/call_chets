@@ -2,10 +2,10 @@ CC = g++
 CFLAGS = -Wall -O2
 INCLUDES = -I/usr/local/include
 LIBS = -L/usr/local/lib -lhts
-TARGET1 = get_phased_sites
+TARGET1 = get_non_ref_sites
 TARGET2 = call_chets
 TARGET3 = encode_vcf
-SOURCE1 = get_phased_sites.cpp
+SOURCE1 = get_non_ref_sites.cpp
 SOURCE2 = call_chets.cpp
 SOURCE3 = encode_vcf.cpp
 

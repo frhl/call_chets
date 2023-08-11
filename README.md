@@ -9,12 +9,12 @@ todo: duplicate lines with alt/ref flipped
 
 ### Usage
 
-1. Get a list of gene-sample sites.
+1. List sites by sample with at least one alternate allele.
 ```
-./get_phased_sites test/out.vcf 0.50 test/trio.vcf > phased_sites.txt
+./get_non_ref_sites test/out.vcf 0.50 test/trio.vcf > phased_sites.txt
 ```
 
-2. Get dosage by gene and call compound heterozygotes
+2. Group by gene and list samples with at least one alternate allele. 
 ```
 ./call_chets phased_sites.txt test/gene_map.txt > chets.txt
 # head chets.txt
@@ -24,8 +24,9 @@ todo: duplicate lines with alt/ref flipped
 # HG00101	geneA	hom+het	2	20:1665:T:C-1|0;20:2041:G:A-1|1;20:2220:G:A-0|1;20:2564:A:G-1|1
 ```
 
-3. Convert gene dosages into VCF
+3. Convert into a VCF file.
 ```
+./encode_vcf chets.txt tests/samples.txt
 
 ```
 
