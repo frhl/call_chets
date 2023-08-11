@@ -4,7 +4,7 @@
 
 ### Usage
 
-1. List sites by sample with at least one alternate allele.
+1. List sites (with MAF>0.50) by sample with at least one alternate allele.
 ```
 ./get_non_ref_sites test/out.vcf 0.50 test/trio.vcf > phased_sites.txt
 ```
