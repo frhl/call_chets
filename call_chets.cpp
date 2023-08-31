@@ -43,8 +43,8 @@ int main(int argc, char* argv[]) {
     std::cerr << "* Processing genotype file.. This can take a while\n";
     while (gzgets(genotypeFile, buf, sizeof(buf))) {
         std::stringstream ss(buf);
+        ss >> sample >> variantIndex >> variant >> genotype;
         if (variantToGene.find(variant) != variantToGene.end()) {
-            ss >> sample >> variantIndex >> variant >> genotype;
             sampleGeneVariants[sample][variantToGene[variant]].push_back(variant + "-" + genotype);
 	    keptVariants++;
         } else {
