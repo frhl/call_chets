@@ -10,8 +10,8 @@ This repository contains C++ scripts tailored for analyses with phased data, spe
 * libcurl4-openssl-dev
 * libhts-dev
 
-### Build:
-Scripts can be compiled using the provided Makefile. Ensure you have all the necessary dependencies installed.
+### Installation
+Scripts can be compiled using the provided Makefile. Ensure you have all the necessary dependencies installed or the docker.
 
 ### Usage
 
