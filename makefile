@@ -1,7 +1,7 @@
 CC = g++
 CFLAGS = -Wall -O2
 INCLUDES = -I/usr/local/include
-LIBS = -L/usr/local/lib -lhts
+LIBS = -L/usr/local/lib -lhts -lz
 TARGET1 = get_non_ref_sites
 TARGET2 = call_chets
 TARGET3 = encode_vcf
@@ -19,6 +19,7 @@ $(TARGET2): $(SOURCE2)
 
 $(TARGET3): $(SOURCE3)
 		$(CC) $(CFLAGS) $(INCLUDES) $(SOURCE3) -o $(TARGET3) $(LIBS)
+
 
 clean:
 		rm -f $(TARGET1) $(TARGET2) $(TARGET3)

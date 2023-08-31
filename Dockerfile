@@ -6,17 +6,16 @@ LABEL maintainer="flassen@well.ox.ac.uk"
 
 # Update and install system dependencies
 RUN apt-get update && apt-get install -y \
+    g++ \
+    zlib1g-dev \
     git
-
-# Install Python library
-RUN pip3 install simplejson
 
 # Clone htslib and install
 RUN git clone --recurse-submodules https://github.com/samtools/htslib.git
 WORKDIR htslib
 
 # copy scripts 
-WORKDIR ..
+WORKDIR ../app
 COPY makefile makefile
 COPY get_non_ref_sites.cpp get_non_ref_sites.cpp
 COPY call_chets.cpp call_chets.cpp
