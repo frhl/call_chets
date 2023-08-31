@@ -4,6 +4,7 @@
 #include <map>
 #include <vector>
 #include <sstream>
+#include <zlib.h>
 
 
 int main(int argc, char* argv[]) {
@@ -12,35 +13,36 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::ifstream genotypeFile(argv[1]);
-    std::ifstream mappingFile(argv[2]);
-
-    if (!genotypeFile.is_open() || !mappingFile.is_open()) {
-        std::cerr << "Error opening files." << std::endl;
-        return 1;
-    }
+    // expect .gz file no matter what
+    gzFile genotypeFile = gzopen(argv[1], "rb");
+    gzFile mappingFile = gzopen(argv[2], "rb");
 
     // Mapping variant to gene
     std::map<std::string, std::string> variantToGene;
     std::string variant, gene;
+    char buf[1024];
 
-    while (mappingFile >> variant >> gene) {
+    while (gzgets(mappingFile, buf, sizeof(buf))) {  // Use gzgets to read a line
+        std::stringstream ss(buf);
+        ss >> variant >> gene;
         variantToGene[variant] = gene;
     }
+
+    gzclose(mappingFile);
 
     // Process genotype file
     std::map<std::string, std::map<std::string, std::vector<std::string>>> sampleGeneVariants;
     std::string line;
-    // Skip the header of genotype file
-    std::getline(genotypeFile, line);
-
     std::string sample, variantIndex, genotype;
+    gzgets(genotypeFile, buf, sizeof(buf));
 
-    while (genotypeFile >> sample >> variantIndex >> variant >> genotype) {
-        // Update our data structure with this variant-genotype
+    while (gzgets(genotypeFile, buf, sizeof(buf))) {
+        std::stringstream ss(buf);
+        ss >> sample >> variantIndex >> variant >> genotype;
         sampleGeneVariants[sample][variantToGene[variant]].push_back(variant + "-" + genotype);
     }
-
+    
+    gzclose(genotypeFile);
 
     // Print the output
     for (const auto &samplePair : sampleGeneVariants) {
