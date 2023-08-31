@@ -1,7 +1,19 @@
 # chet tools
-Tools to deal with phased data.
+This repository contains C++ scripts tailored for analyses with phased data, specifically involving variant call format (VCF) files.
 
-# How to run
+### Dependencies:
+* htslib:
+* g++
+* zlib1g-dev
+* liblzma-dev
+* libbz2-dev
+* libcurl4-openssl-dev
+* libhts-dev
+
+### Build:
+Scripts can be compiled using the provided Makefile. Ensure you have all the necessary dependencies installed.
+
+### Usage
 
 **Step 0**. Filter to AAF<1%. Ensure that these common variants are excluded before proceeding.
 ```
