@@ -22,6 +22,7 @@ int main(int argc, char* argv[]) {
     std::string variant, gene;
     char buf[1024];
 
+    std::cerr << "* Processing mapping and genotype file..\n";
     while (gzgets(mappingFile, buf, sizeof(buf))) {  // Use gzgets to read a line
         std::stringstream ss(buf);
         ss >> variant >> gene;
@@ -36,13 +37,26 @@ int main(int argc, char* argv[]) {
     std::string sample, variantIndex, genotype;
     gzgets(genotypeFile, buf, sizeof(buf));
 
+    int discardedVariants = 0;
+    int keptVariants = 0; 
+
+    std::cerr << "* Processing genotype file.. This can take a while\n";
     while (gzgets(genotypeFile, buf, sizeof(buf))) {
         std::stringstream ss(buf);
-        ss >> sample >> variantIndex >> variant >> genotype;
-        sampleGeneVariants[sample][variantToGene[variant]].push_back(variant + "-" + genotype);
+        if (variantToGene.find(variant) != variantToGene.end()) {
+            ss >> sample >> variantIndex >> variant >> genotype;
+            sampleGeneVariants[sample][variantToGene[variant]].push_back(variant + "-" + genotype);
+	    keptVariants++;
+        } else {
+            discardedVariants++;
+	}
     }
-    
+
     gzclose(genotypeFile);
+
+    std::cerr << "* Total variants processed: " << (discardedVariants + keptVariants) << std::endl;
+    std::cerr << "* Variants in mapping file: " << keptVariants << std::endl;
+    std::cerr << "* Variants not in mapping file: " << discardedVariants << std::endl << std::endl;
 
     // Print the output
     for (const auto &samplePair : sampleGeneVariants) {
