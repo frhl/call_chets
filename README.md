@@ -1,8 +1,7 @@
-# chettools
+# chet tools
+Tools to deal with phased data.
 
-* requires htslib
-
-### Usage
+# Usage
 
 0. Filter to AAF<1%. Ensure that these common variants are excluded before proceeding.
 ```
