@@ -67,10 +67,10 @@ int main(int argc, char *argv[]) {
         }
         if (gt_arr) free(gt_arr);
         variant_counter++;
-        if (variant_counter % 1000 == 0) {
+        if (variant_counter % 10 == 0) {
              time(&current_time);
              double elapsed_time = difftime(current_time, start_time); 
-             printf("Processed %d variants in %.2f seconds.\n", variant_counter, elapsed_time);
+             printf("\rWorking.. (Processed %d variants in %.2f seconds).", variant_counter, elapsed_time);
         }
     }
 

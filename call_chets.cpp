@@ -54,9 +54,9 @@ int main(int argc, char* argv[]) {
 
     gzclose(genotypeFile);
 
-    std::cerr << "* Total variants processed: " << (discardedVariants + keptVariants) << std::endl;
-    std::cerr << "* Variants in mapping file: " << keptVariants << std::endl;
-    std::cerr << "* Variants not in mapping file: " << discardedVariants << std::endl << std::endl;
+    std::cerr << "* Note: variants processed: " << (discardedVariants + keptVariants) << std::endl;
+    std::cerr << "* Note: Variants in mapping file: " << keptVariants << std::endl;
+    std::cerr << "* Note: Variants not in mapping file: " << discardedVariants << std::endl << std::endl;
 
     // Print the output
     for (const auto &samplePair : sampleGeneVariants) {
