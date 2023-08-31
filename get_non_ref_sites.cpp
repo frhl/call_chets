@@ -73,6 +73,7 @@ int main(int argc, char *argv[]) {
              printf("\rWorking.. (Processed %d variants in %.2f seconds).", variant_counter, elapsed_time);
         }
     }
+    printf(" Done!\n");
 
     bcf_destroy(rec);
     bcf_hdr_destroy(header);
