@@ -25,23 +25,7 @@ bcftools view --max-af 0.01 unfiltered.trio.vcf -o trio.vcf
 # HG00101	20	geneA	hom+het	2	20:1665:T:C-1|0;20:2041:G:A-1|1;20:2220:G:A-0|1;20:2564:A:G-1|1
 ```
 
-3. Check for unexpected enrichment of deleterious alleles (Optional). This is only relevant if no Alternate Allele Frequency (AAF) has been run.
-```
-cat result.new.txt | cut -f6 | sort | uniq -c | sort -k1  | grep -v ";" | awk '$1 > 50000' > curious_variants.txt
-cat curious_variants.txt
-```
-Remove these alternate alleles present in all samples.
-```
-
-
-```
-
-
-
-
-
-
-4. Convert into a VCF file.
+3. Convert into a VCF file.
 ```
 ./encode_vcf chets.txt test/samples.txt > my.vcf
 bcftools view my.vcf
