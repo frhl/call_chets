@@ -83,10 +83,16 @@ int main(int argc, char* argv[]) {
 	    int dosage = 0;
 
             // Determine the "call" value
-            if ((count10 > 0 && count01 == 0 && count11 == 0) || (count10 == 0 && count01 > 0 && count11 == 0)) {
+            if ((count10 == 1 && count01 == 0 && count11 == 0) || (count10 == 0 && count01 == 1 && count11 == 0)) {
                 callValue = "het";
 	        dosage = 1;
-            } else if (count10 == 0 && count01 == 0 && count11 > 0) {
+            } else if (count10 == 0 && count01 > 1 && count11 == 0) {
+                callValue = "cis";
+                dosage = 1;
+	    } else if (count10 > 1 && count01 == 0 && count11 == 0) {
+                callValue = "cis";
+                dosage = 1;
+	    } else if (count10 == 0 && count01 == 0 && count11 > 0) {
                 callValue = "hom" ;
 		dosage = 2;
 	    } else if (count10 >= 0 && count01 >= 0 && count11 > 0) {
@@ -99,9 +105,7 @@ int main(int argc, char* argv[]) {
             	callValue = "na";
 		dosage = 0;
 	    }
-
-	    std::cout << callValue << "\t" << dosage << "\t"; // Print call and dosage
-
+	    std::cout << callValue << "\t" << dosage << "\t";
             for (size_t i = 0; i < genePair.second.size(); ++i) {
                 std::cout << genePair.second[i];
                 if (i != genePair.second.size() - 1) {
