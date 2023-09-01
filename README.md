@@ -31,6 +31,8 @@ rinsed and repeated depending on the gene_map input.
 ```
 ./call_chets trio.phased_sites.txt.gz gene_map.txt > test/trio.result.txt
 ./call_chets trio.phased_sites.txt.gz gene_map.info.txt | grep chet
+Sample1 chr21 ENSG00000274391 chet 2 chr21:10542449:G:A-splice_donor_variant;chr21:10605416:G:T-splice_acceptor_variant
+Sample2 chr21 ENSG00000177398 chet 2 chr21:42076249:T:C-splice_donor_variant;chr21:42084101:C:T-stop_gained
 ```
 
 **Step 3**. Convert into a VCF file.
