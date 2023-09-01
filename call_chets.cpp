@@ -9,8 +9,23 @@
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " <Genotype File> <Mapping File>" << std::endl;
-        return 1;
+	std::cerr << "\nProgram: chet tools v0.0.1 (encode_vcf)\n" << std::endl;
+	std::cerr << "Usage: " << argv[0] << " <Genotype File> <Mapping File>\n" << std::endl;
+	std::cerr << "\nDescription:" << std::endl;
+	std::cerr << "  Maps variants to genes using a self-generated mapping file and" << std::endl;
+	std::cerr << "  takes in the output from 'get_non_ref_sites'. Will identify co-" << std::endl;
+	std::cerr << "  occurring variants in cis and trans." << std::endl;
+	std::cerr << "\nInput:" << std::endl; 
+	std::cerr << "  <Genotype File> : .gz file containing sample genotype data," << std::endl;
+	std::cerr << "                    typically output from 'get_non_ref_sites'.\n" << std::endl;
+	std::cerr << "  <Mapping File>  : File mapping variants to genes. Expected" << std::endl;
+	std::cerr << "                    to contain at least two columns with a header"<< std::endl;
+	std::cerr << "                    in the format: variant, gene.\n" << std::endl;
+	std::cerr << "Output Format:" << std::endl;
+	std::cerr << "  Sample Chromosome Gene Call Dosage Variant-Genotype..." << std::endl;
+	std::cerr << "\nNotes:" << std::endl;
+	std::cerr << "  Call values can be 'het', 'cis', 'hom', 'hom+het', 'chet." << std::endl; 
+	return 1;
     }
 
     // expect .gz file no matter what

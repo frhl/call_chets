@@ -7,14 +7,20 @@
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {
-        std::cerr << "\nchet tools v0.0.1\n" << std::endl;
-        std::cerr << "\nUsage: " << argv[0] << " <input> <samples> <additive|recessive>\n" << std::endl;
-        std::cerr << "Options:" << std::endl;
-        std::cerr << " <input> \tOutput file from 'get_non_ref_sites'." << std::endl;
-        std::cerr << " <samples> \tFile path to list of samples seperated by lines. No header required." << std::endl;
-        std::cerr << " <mode> \tEither 'additive' to encode dosages as 0,1 and 2. Heterozygotes and cis" << std::endl;
-        std::cerr << "        \tvariants with be kept. Use 'recessive' to encode dosages as 0 and 2 and" << std::endl;
-        std::cerr << "        \tThus only keep compound heterozygotes and homozygotes downstream.\n" << std::endl;
+	std::cerr << "\nProgram: chet tools v0.0.1 (encode_vcf)" << std::endl;
+	std::cerr << "\n\nUsage: " << argv[0]  << " <input> <samples> <additive|recessive>" << std::endl;
+	std::cerr << "\nDescription:" << std::endl;
+	std::cerr << "  Converts 'call_chets' output to VCF for downstream analysis."<< std::endl;
+	std::cerr << "  Results are streamed to standard output." << std::endl;
+	std::cerr << "\nOptions:" << std::endl;
+	std::cerr << "  <input>   : Output from 'call_chets'.\n";
+	std::cerr << "  <samples> : List of samples. One per line. No header.\n";
+	std::cerr << "  <mode>    : Use 'additive' for dosages of 0, 1, and 2. This keeps" << std::endl;
+	std::cerr << "              heterozygotes and cis variants. Use 'recessive' for"  << std::endl;
+	std::cerr << "              dosages of 0 and 2, targeting compound heterozygotes"  << std::endl;
+	std::cerr << "              and homozygotes."  << std::endl;
+	std::cerr << "\nExample:" << std::endl;
+	std::cerr << "  ./encode_vcf.o called_chets.txt.gz samples.txt additive | bgzip > out.vcf.gz\n\n";
 	return 1;
     }
 

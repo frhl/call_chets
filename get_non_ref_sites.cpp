@@ -1,3 +1,4 @@
+#include <iostream>
 #include <stdio.h>
 #include <zlib.h>
 #include <time.h>
@@ -20,9 +21,20 @@ int main(int argc, char *argv[]) {
     time(&start_time);
 
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <in.vcf/in.vcf.gz/in.bcf> <out.txt.gz> \n", argv[0]);
-        fprintf(stderr, "\nNote: Ensure that <in.vcf> has already been filered by MAF/AF.\n");
-        return 1;
+        std::cerr << "\nProgram: chet tools v0.0.1 (get_non_ref_sites)\n" << std::endl;
+        std::cerr << "\nUsage: " << argv[0] << " <input vcf/bcf> <output file>" << std::endl;
+        std::cerr << "\nDescription:" << std::endl;
+        std::cerr << "\tTakes a VCF/BCF with phased genotypes and identifies samples" << std::endl;
+        std::cerr << "\twith at least one alternate allele. The result is a file in" << std::endl;
+        std::cerr << "\tthe format of sample, variant, genotype. Note: this may" << std::endl;
+        std::cerr << "\ttake a very long time if common variants are not excluded " << std::endl;
+        std::cerr << "\tusing 'bcftools view --max-af 0.01 in.vcf -Oz -o out.vcf.gz'" << std::endl;
+        std::cerr << "\nOptions:" << std::endl;
+        std::cerr << " <input vcf> \tInput VCF/BCF with phased genotypes." << std::endl;       
+        std::cerr << " <output file> \tOutput file (with .gz extension\n" << std::endl;       
+	std::cerr << "Example:" << std::endl;
+	std::cerr << " ./get_non_ref_sites.o test/trio.vcf trio.sites.txt.gz\n" << std::endl;
+	return 1;
     }
 
     const char *suffix = ".gz";
