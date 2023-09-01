@@ -5,7 +5,7 @@
 #include <vector>
 #include <sstream>
 #include <zlib.h>
-
+#include <set>
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {
@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
 	std::cerr << "                    typically output from 'get_non_ref_sites'.\n" << std::endl;
 	std::cerr << "  <Mapping File>  : File mapping variants to genes. Expected" << std::endl;
 	std::cerr << "                    to contain at least two columns with a header"<< std::endl;
-	std::cerr << "                    in the format: variant, gene.\n" << std::endl;
+	std::cerr << "                    in the format: variant, gene, info (optional).\n" << std::endl;
 	std::cerr << "Output Format:" << std::endl;
 	std::cerr << "  Sample Chromosome Gene Call Dosage Variant-Genotype..." << std::endl;
 	std::cerr << "\nNotes:" << std::endl;
@@ -33,15 +33,22 @@ int main(int argc, char* argv[]) {
     gzFile mappingFile = gzopen(argv[2], "rb");
 
     // Mapping variant to gene
-    std::map<std::string, std::string> variantToGene;
-    std::string variant, gene;
+    //std::map<std::string, std::string> variantToGene;
+    std::map<std::string, std::pair<std::string, std::string>> variantToGene; 
+    std::string variant, gene, thirdColumn;
+    std::set<std::string> uniqueVariantsKept;
+    std::set<std::string> uniqueVariantsDiscarded;
     char buf[1024];
 
     //std::cerr << "* Processing mapping and genotype file..\n";
     while (gzgets(mappingFile, buf, sizeof(buf))) {  // Use gzgets to read a line
         std::stringstream ss(buf);
         ss >> variant >> gene;
-        variantToGene[variant] = gene;
+        if (ss >> thirdColumn) {  // Try to read the third column
+                variantToGene[variant] = {gene, thirdColumn};
+        } else {
+                variantToGene[variant] = {gene, ""};  // No third column
+        }
     }
 
     gzclose(mappingFile);
@@ -60,17 +67,22 @@ int main(int argc, char* argv[]) {
         std::stringstream ss(buf);
         ss >> sample >> variantIndex >> variant >> genotype;
         if (variantToGene.find(variant) != variantToGene.end()) {
-            sampleGeneVariants[sample][variantToGene[variant]].push_back(variant + "-" + genotype);
-	    keptVariants++;
+                std::string geneValue = variantToGene[variant].first;
+                std::string modifiedVariant = variant + "-" + genotype;
+                if (!variantToGene[variant].second.empty()) {
+                        modifiedVariant += "-" + variantToGene[variant].second;
+                }
+                sampleGeneVariants[sample][geneValue].push_back(modifiedVariant);
+                uniqueVariantsKept.insert(variant);
         } else {
-            discardedVariants++;
-	}
-    }
+                uniqueVariantsDiscarded.insert(variant);
+        }
+     }
 
     gzclose(genotypeFile);
 
-    std::cerr << "Variants in mapping file (kept): " << keptVariants << std::endl;
-    std::cerr << "Variants not in mapping file (Discarded): " << discardedVariants << std::endl;
+    std::cerr << "Variants in mapping file (kept): " << uniqueVariantsKept.size() << std::endl;
+    std::cerr << "Variants not in mapping file (Discarded): " << uniqueVariantsDiscarded.size() << std::endl;
     std::cerr << "* Generating sample-gene-variant file.." << std::endl;
 
     // Print the output
@@ -87,7 +99,7 @@ int main(int argc, char* argv[]) {
             int count11 = 0;
             for (const auto &var : genePair.second) {
                 size_t pos = var.find('-');
-                std::string genotype = var.substr(pos + 1);
+                std::string genotype = var.substr(pos + 1, 3);
                 if (genotype == "1|0") count10++;
                 else if (genotype == "0|1") count01++;
                 else if (genotype == "1|1") count11++;
