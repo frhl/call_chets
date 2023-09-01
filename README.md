@@ -40,5 +40,7 @@ Sample2 chr21 ENSG00000177398 chet 2 chr21:42076249:T:C-splice_donor_variant;chr
 ./encode_vcf trio.result.txt test/samples.txt | bgzip > trio.result.vcf.gz
 ```
 
+### Mapping file
+The mapping file can be obtained from running VEP on the variants of interest and extracting (using bash) the variant ID and the gene ID.
 
 
