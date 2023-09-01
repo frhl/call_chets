@@ -48,7 +48,16 @@ int main(int argc, char *argv[]) {
 
     gzFile out = gzopen(argv[2], "wb");
 
-    gzprintf(out, "Sample\tVariantIndex\tVariant\tGenotype\n");
+    float *pp_arr = NULL;
+    int npp_arr = 0;
+    int pp_id = bcf_hdr_id2int(header, BCF_DT_ID, "PP");
+    bool has_pp = bcf_hdr_idinfo_exists(header, BCF_HL_FMT, pp_id);
+
+    if (has_pp) {
+        gzprintf(out, "Sample\tVariantIndex\tVariant\tGenotype\tPP\n");
+    } else {
+        gzprintf(out, "Sample\tVariantIndex\tVariant\tGenotype\n");
+    }
 
     // Iterate over all samples and variants
     while (bcf_read(fp, header, rec) >= 0) {
@@ -61,6 +70,11 @@ int main(int argc, char *argv[]) {
         int32_t *gt_arr = NULL, ngt_arr = 0, ngt = 0;
         ngt = bcf_get_genotypes(header, rec, &gt_arr, &ngt_arr);
 
+	// extract PP
+        if (has_pp) {
+             bcf_get_format_float(header, rec, "PP", &pp_arr, &npp_arr);
+         }
+
         // Iterate over the samples
         for (int i = 0; i < bcf_hdr_nsamples(header); i++) {
             int32_t *ptr = gt_arr + i*2; // for each sample, we have two allele calls
@@ -71,11 +85,19 @@ int main(int argc, char *argv[]) {
             int a1 = bcf_gt_allele(ptr[0]);
             int a2 = bcf_gt_allele(ptr[1]);
             if (a1 == 1 && a2 == 1) {
-                gzprintf(out, "%s\t%d\t%s:%d:%s:%s\t1|1\n", header->samples[i], variant_counter+1, bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1]);
-            }
+		if (has_pp){
+		    gzprintf(out, "%s\t%d\t%s:%d:%s:%s\t1|1\t\n", header->samples[i], variant_counter+1, bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1]);
+		} else {
+		    gzprintf(out, "%s\t%d\t%s:%d:%s:%s\t1|1\n", header->samples[i], variant_counter+1, bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1]);
+        	}    
+	    }
             else if (a1 != a2) {
-                gzprintf(out, "%s\t%d\t%s:%d:%s:%s\t%s\n", header->samples[i], variant_counter+1, bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1], a1 < a2 ? "1|0" : "0|1");
-            }
+                if (has_pp) {
+			gzprintf(out, "%s\t%d\t%s:%d:%s:%s\t%s\t%.2f\n", header->samples[i], variant_counter+1, bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1], a1 < a2 ? "1|0" : "0|1", pp_arr[i]);
+		} else {
+			gzprintf(out, "%s\t%d\t%s:%d:%s:%s\t%s\n", header->samples[i], variant_counter+1, bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1], a1 < a2 ? "1|0" : "0|1");
+		}   
+	}
         }
         if (gt_arr) free(gt_arr);
         variant_counter++;
