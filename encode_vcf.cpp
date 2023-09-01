@@ -7,12 +7,26 @@
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " <Output from 'get_non_ref_sites' > <Sample List File>" << std::endl;
-        return 1;
+        std::cerr << "\nchet tools v0.0.1\n" << std::endl;
+        std::cerr << "\nUsage: " << argv[0] << " <input> <samples> <additive|recessive>\n" << std::endl;
+        std::cerr << "Options:" << std::endl;
+        std::cerr << " <input> \tOutput file from 'get_non_ref_sites'." << std::endl;
+        std::cerr << " <samples> \tFile path to list of samples seperated by lines. No header required." << std::endl;
+        std::cerr << " <mode> \tEither 'additive' to encode dosages as 0,1 and 2. Heterozygotes and cis" << std::endl;
+        std::cerr << "        \tvariants with be kept. Use 'recessive' to encode dosages as 0 and 2 and" << std::endl;
+        std::cerr << "        \tThus only keep compound heterozygotes and homozygotes downstream.\n" << std::endl;
+	return 1;
     }
 
     std::ifstream longFile(argv[1]);
     std::ifstream sampleFile(argv[2]);
+    std::string mode(argv[3]);
+
+    if (mode != "additive" && mode != "recessive") {
+        std::cerr << "Error: Invalid dosage encoding mode provided. Expecting 'additive' or 'recessive'." << std::endl;
+        return 1;
+    }
+
 
     // Collect all samples into a set
     std::set<std::string> samples;
@@ -29,7 +43,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::map<std::string, std::map<std::string, int>> geneSampleDosage;
-    
+
     // Map the chrom
     std::map<std::string, std::string> geneToChromosome;
 
@@ -40,14 +54,19 @@ int main(int argc, char* argv[]) {
     while (std::getline(longFile, line)) {
         std::istringstream iss(line);
         iss >> sample >> chromosome >> gene >> configuration >> dosage >> variantInfo;
-	geneToChromosome[gene] = chromosome;
+
+	// only 2 allowed in recessive encoding
+	if (mode == "recessive" && dosage == 1) {
+            dosage = 0;
+        }
+        geneToChromosome[gene] = chromosome;
         geneSampleDosage[gene][sample] = dosage;
 	contigs.insert(chromosome);
     }
 
     // Print the output header
     std::cout << "##fileformat=VCFv4.2\n";
-    std::cout << "##FILTER=<ID=PASS,Description=\"All filters passed\">";
+    std::cout << "##FILTER=<ID=PASS,Description=\"All filters passed\">\n";
     for (const auto& chr : contigs) {
         std::cout << "##contig=<ID=" << chr << ">\n";
     }
@@ -72,7 +91,7 @@ int main(int argc, char* argv[]) {
             }
         }
         std::cout << std::endl;
-        rowIndex++; 
+        rowIndex++;
     }
 
     return 0;
