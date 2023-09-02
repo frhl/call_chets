@@ -43,9 +43,9 @@ Sample1 chr21 ENSG00000274391 chet 2 chr21:10542449:G:A-splice_donor_variant;chr
 Sample2 chr21 ENSG00000177398 chet 2 chr21:42076249:T:C-splice_donor_variant;chr21:42084101:C:T-stop_gained
 ```
 
-**Step 3**. Convert into a VCF file.
+**Step 3**. Convert into a VCF file using an additive encoding (i.e. het/cis=1 and hom/chet=2):
 ```
-./encode_vcf trio.result.txt test/samples.txt | bgzip > trio.result.vcf.gz
+./encode_vcf trio.result.txt test/samples.txt additive | bgzip > trio.result.vcf.gz
 zcat trio.result.vcf.gz | cut -f1-10 | head
 ##fileformat=VCFv4.2
 ##FILTER=<ID=PASS,Description="All filters passed">
