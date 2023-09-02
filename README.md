@@ -46,6 +46,18 @@ Sample2 chr21 ENSG00000177398 chet 2 chr21:42076249:T:C-splice_donor_variant;chr
 **Step 3**. Convert into a VCF file.
 ```
 ./encode_vcf trio.result.txt test/samples.txt | bgzip > trio.result.vcf.gz
+zcat trio.result.vcf.gz | cut -f1-10 | head
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##contig=<ID=chr21>
+##FORMAT=<ID=DS,Number=1,Type=Float,Description="Dosage">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	Sample1
+chr21	1	ENSG00000141956	A	B	.	.	.	DS	0
+chr21	2	ENSG00000141959	A	B	.	.	.	DS	0
+chr21	3	ENSG00000142149	A	B	.	.	.	DS	0
+chr21	4	ENSG00000142156	A	B	.	.	.	DS	0
+chr21	5	ENSG00000142166	A	B	.	.	.	DS	0
+
 ```
 
 ### Mapping file
