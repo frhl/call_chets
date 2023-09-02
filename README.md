@@ -26,6 +26,14 @@ bcftools view --max-af 0.01 unfiltered.trio.vcf -o trio.vcf
 ./get_non_ref_sites trio.vcf trio.phased_sites.txt.gz
 ```
 
+Note, that step0+step1 can also be accomplished directly with the following command.
+```
+bcftools view trio.vcf --max-af 0.01 -Ou | bcftools query -i'GT="alt"' -f'[%SAMPLE %CHROM:%POS:%REF:%ALT %GT\n]' | gzip > trio.phased_sites.txt.gz
+```
+
+
+
+
 **Step 2**. Group by gene and list samples with at least one alternate allele. This step can be
 rinsed and repeated depending on the gene_map input. 
 ```
@@ -42,5 +50,7 @@ Sample2 chr21 ENSG00000177398 chet 2 chr21:42076249:T:C-splice_donor_variant;chr
 
 ### Mapping file
 The mapping file can be obtained from running VEP on the variants of interest and extracting (using bash) the variant ID and the gene ID.
+
+
 
 

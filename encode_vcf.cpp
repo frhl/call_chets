@@ -2,11 +2,12 @@
 #include <fstream>
 #include <map>
 #include <set>
+#include <zlib.h>
 #include <vector>
 #include <sstream>
 
 int main(int argc, char* argv[]) {
-    if (argc != 3) {
+    if (argc < 4) {
 	std::cerr << "\nProgram: chet tools v0.0.1 (encode_vcf)" << std::endl;
 	std::cerr << "\n\nUsage: " << argv[0]  << " <input> <samples> <additive|recessive>" << std::endl;
 	std::cerr << "\nDescription:" << std::endl;
@@ -24,9 +25,21 @@ int main(int argc, char* argv[]) {
 	return 1;
     }
 
-    std::ifstream longFile(argv[1]);
+
+    gzFile longFile = gzopen(argv[1], "rb");
     std::ifstream sampleFile(argv[2]);
     std::string mode(argv[3]);
+
+    if (!longFile) {
+        std::cerr << "Error: Cannot open gzipped <input> file for reading: " << argv[1] << std::endl;
+        return 1;
+    }
+
+     if (!sampleFile) {
+        std::cerr << "Error: Cannot open <samples> file for reading: " << argv[2] << std::endl;
+        return 1;
+    }
+
 
     if (mode != "additive" && mode != "recessive") {
         std::cerr << "Error: Invalid dosage encoding mode provided. Expecting 'additive' or 'recessive'." << std::endl;
@@ -57,11 +70,11 @@ int main(int argc, char* argv[]) {
     std::string line, sample, chromosome, gene, configuration, variantInfo;
     std::set<std::string> contigs;
     int dosage;
-    while (std::getline(longFile, line)) {
+    char buffer[4096];
+    while (gzgets(longFile, buffer, sizeof(buffer))) {
+        std::string line(buffer);
         std::istringstream iss(line);
         iss >> sample >> chromosome >> gene >> configuration >> dosage >> variantInfo;
-
-	// only 2 allowed in recessive encoding
 	if (mode == "recessive" && dosage == 1) {
             dosage = 0;
         }
@@ -69,6 +82,8 @@ int main(int argc, char* argv[]) {
         geneSampleDosage[gene][sample] = dosage;
 	contigs.insert(chromosome);
     }
+
+    gzclose(longFile);
 
     // Print the output header
     std::cout << "##fileformat=VCFv4.2\n";
