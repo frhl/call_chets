@@ -5,41 +5,81 @@
 #include <zlib.h>
 #include <vector>
 #include <sstream>
+#include <string>
 
-int main(int argc, char* argv[]) {
-    if (argc < 4) {
-	std::cerr << "\nProgram: chet tools v0.0.1 (encode_vcf)" << std::endl;
-	std::cerr << "\n\nUsage: " << argv[0]  << " <input> <samples> <additive|recessive>" << std::endl;
+std::string getVersion() {
+    std::ifstream versionFile(".version");
+    if (!versionFile.is_open()) {
+        std::cerr << "Warning: Unable to open .version file." << std::endl;
+    }
+    std::string version;
+    std::getline(versionFile, version);
+    versionFile.close();
+    
+    return version;
+}
+
+
+void printUsage(const char* path) {
+	std::string version = getVersion();
+	std::cerr << "\nProgram: chet tools v" << version << "\n" << std::endl;
+	std::cerr << "\n\nUsage: " << path << " --input <input> --samples <samples> --mode [<additive|recessive>]" << std::endl;
 	std::cerr << "\nDescription:" << std::endl;
 	std::cerr << "  Converts 'call_chets' output to VCF for downstream analysis."<< std::endl;
 	std::cerr << "  Results are streamed to standard output." << std::endl;
 	std::cerr << "\nOptions:" << std::endl;
-	std::cerr << "  <input>   : Output from 'call_chets'.\n";
-	std::cerr << "  <samples> : List of samples. One per line. No header.\n";
-	std::cerr << "  <mode>    : Use 'additive' for dosages of 0, 1, and 2. This keeps" << std::endl;
-	std::cerr << "              heterozygotes and cis variants. Use 'recessive' for"  << std::endl;
-	std::cerr << "              dosages of 0 and 2, targeting compound heterozygotes"  << std::endl;
-	std::cerr << "              and homozygotes."  << std::endl;
+	std::cerr << "  --input/-i   : Output from 'call_chets'.\n";
+	std::cerr << "  --samples/-s : List of samples. One per line. No header.\n";
+	std::cerr << "  --mode/-m    : Use 'additive' for dosages of 0, 1, and 2. This keeps" << std::endl;
+	std::cerr << "                 heterozygotes and cis variants. Use 'recessive' for"  << std::endl;
+	std::cerr << "                 dosages of 0 and 2, targeting compound heterozygotes"  << std::endl;
+	std::cerr << "                 and homozygotes. (Default='additive')"  << std::endl;
 	std::cerr << "\nExample:" << std::endl;
 	std::cerr << "  ./encode_vcf.o called_chets.txt.gz samples.txt additive | bgzip > out.vcf.gz\n\n";
-	return 1;
+}
+
+int main(int argc, char* argv[]) {
+    
+    std::string pathInput;
+    std::string pathSamples;
+    std::string mode = "additive";
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--help" || arg == "-h") {
+            printUsage(argv[0]);
+	    return 0;
+        } else if ((arg == "--input" || arg == "-i" ) && i + 1 < argc) {
+            pathInput = argv[++i];
+        } else if ((arg == "--samples" || arg == "-s" ) && i + 1 < argc) {
+            pathSamples = argv[++i];
+        } else if ((arg == "--mode" || arg == "-m" ) && i + 1 < argc) {
+            mode = argv[++i];
+       } else {
+            std::cerr << "Error! Unknown or incomplete argument: " << arg << std::endl;
+            printUsage(argv[0]);
+            return 1;
+        }
     }
 
+    if (pathInput.empty() || pathSamples.empty()) {
+        std::cerr << "Error! Both --input and --samples must be provided." << std::endl;
+        printUsage(argv[0]);
+        return 1;
+    }
 
-    gzFile longFile = gzopen(argv[1], "rb");
-    std::ifstream sampleFile(argv[2]);
-    std::string mode(argv[3]);
+    gzFile longFile = gzopen(pathInput.c_str(), "rb");
+    std::ifstream sampleFile(pathSamples);
 
     if (!longFile) {
-        std::cerr << "Error: Cannot open gzipped <input> file for reading: " << argv[1] << std::endl;
+        std::cerr << "Error: Cannot open gzipped <input> file for reading: " << pathInput << std::endl;
         return 1;
     }
 
-     if (!sampleFile) {
-        std::cerr << "Error: Cannot open <samples> file for reading: " << argv[2] << std::endl;
+    if (!sampleFile) {
+        std::cerr << "Error: Cannot open <samples> file for reading: " << pathSamples << std::endl;
         return 1;
     }
-
 
     if (mode != "additive" && mode != "recessive") {
         std::cerr << "Error: Invalid dosage encoding mode provided. Expecting 'additive' or 'recessive'." << std::endl;
@@ -54,6 +94,23 @@ int main(int argc, char* argv[]) {
         // Remove trailing and leading whitespaces
         sampleLine.erase(0, sampleLine.find_first_not_of(" \t\n\r"));
         sampleLine.erase(sampleLine.find_last_not_of(" \t\n\r") + 1);
+
+        // Split the line using white spaces
+        std::istringstream iss(sampleLine);
+        std::string word;
+        std::vector<std::string> wordsInLine;
+
+        while (iss >> word) {
+            wordsInLine.push_back(word);
+        }
+
+        // Check if line contains more than one word or is empty
+        if (wordsInLine.size() != 1 || sampleLine.empty()) {
+            std::cerr << "Error: Invalid samples file format. Expected one sample per line but detected more!" << std::endl;
+            printUsage(argv[0]);
+            sampleFile.close(); // Close the sample file when done
+            return 1;
+         }
 
         // If line is not empty, add the sample to our set
         if (!sampleLine.empty()) {
