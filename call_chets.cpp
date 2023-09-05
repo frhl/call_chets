@@ -7,30 +7,85 @@
 #include <zlib.h>
 #include <set>
 
-int main(int argc, char* argv[]) {
-    if (argc != 3) {
-	std::cerr << "\nProgram: chet tools v0.0.1 (encode_vcf)\n" << std::endl;
-	std::cerr << "Usage: " << argv[0] << " <Genotype File> <Mapping File>\n" << std::endl;
+std::string getVersion() {
+    std::ifstream versionFile(".version");
+    if (!versionFile.is_open()) {
+        std::cerr << "Warning: Unable to open .version file." << std::endl;
+    }
+    std::string version;
+    std::getline(versionFile, version);
+    versionFile.close();
+
+    return version;
+}
+
+void printUsage(const char* path) {
+	std::string version = getVersion();
+	std::cerr << "\nProgram: chet tools v" << version << "\n" << std::endl;
+	std::cerr << "Usage: " << path << " --geno <Genotype File> --map <Mapping File>\n" << std::endl;
 	std::cerr << "\nDescription:" << std::endl;
-	std::cerr << "  Maps variants to genes using a self-generated mapping file and" << std::endl;
-	std::cerr << "  takes in the output from 'get_non_ref_sites'. Will identify co-" << std::endl;
-	std::cerr << "  occurring variants in cis and trans." << std::endl;
+	std::cerr << "  Call co-occuring variants using a variant-to-gene mapping file" << std::endl;
+	std::cerr << "  alongside a file containing alternate genotypes." << std::endl;
 	std::cerr << "\nInput:" << std::endl; 
-	std::cerr << "  <Genotype File> : .gz file containing sample genotype data," << std::endl;
-	std::cerr << "                    typically output from 'get_non_ref_sites'.\n" << std::endl;
-	std::cerr << "  <Mapping File>  : File mapping variants to genes. Expected" << std::endl;
-	std::cerr << "                    to contain at least two columns with a header"<< std::endl;
-	std::cerr << "                    in the format: variant, gene, info (optional).\n" << std::endl;
+	std::cerr << "  --geno/-g : .gz file containing alternate genotype data in the" << std::endl;
+	std::cerr << "              form of sample id, variant id and genotype that is" << std::endl;
+	std::cerr << "              seperated by whitespace. For example a line may look." << std::endl;
+	std::cerr << "              like the following: 'Sample1 chr21:12314:C:T 1|0'." << std::endl;
+	std::cerr << "  --map/-m  : File mapping variants to genes. This is expected" << std::endl;
+	std::cerr << "              to contain at least two columns with a header"<< std::endl;
+	std::cerr << "              in the format: variant, gene, info (optional)." << std::endl;
 	std::cerr << "Output Format:" << std::endl;
 	std::cerr << "  Sample Chromosome Gene Call Dosage Variant-Genotype..." << std::endl;
 	std::cerr << "\nNotes:" << std::endl;
-	std::cerr << "  Call values can be 'het', 'cis', 'hom', 'hom+het', 'chet." << std::endl; 
-	return 1;
+	std::cerr << "  See README for how to generate --geno file from a VCF/BCF." << std::endl; 
+
+}
+
+
+int main(int argc, char* argv[]) {
+
+   std::string pathGeno;
+   std::string pathMap;
+
+   for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--help" || arg == "-h") {
+            printUsage(argv[0]);
+            return 0;
+       } else if ((arg == "--geno" || arg == "-g" ) && i + 1 < argc) {
+            pathGeno = argv[++i];
+       } else if ((arg == "--map" || arg == "-m" ) && i + 1 < argc) {
+            pathMap = argv[++i];
+       } else {
+            std::cerr << "Error! Unknown or incomplete argument: " << arg << std::endl;
+            printUsage(argv[0]);
+            return 1;
+       }
     }
 
+    // check if needed flags 
+    if (pathGeno.empty() || pathMap.empty()) {
+        std::cerr << "Error! Both --geno and --map must be provided." << std::endl;
+        printUsage(argv[0]);
+        return 1;
+    } 
+
     // expect .gz file no matter what
-    gzFile genotypeFile = gzopen(argv[1], "rb");
-    gzFile mappingFile = gzopen(argv[2], "rb");
+    gzFile genotypeFile = gzopen(pathGeno.c_str(), "rb");
+    gzFile mappingFile = gzopen(pathMap.c_str(), "rb");
+
+    if (!genotypeFile) {
+        std::cerr << "Error: Cannot open --geno file for reading: " << pathGeno << std::endl;
+        printUsage(argv[0]);
+        return 1;
+    }
+
+    if (!mappingFile) {
+        std::cerr << "Error: Cannot open --mapping file for reading: " << pathMap << std::endl;
+        printUsage(argv[0]);
+        return 1;
+    }
+
 
     // Mapping variant to gene
     //std::map<std::string, std::string> variantToGene;
