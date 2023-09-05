@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
     // Process genotype file
     std::map<std::string, std::map<std::string, std::vector<std::string>>> sampleGeneVariants;
     std::string line;
-    std::string sample, variantIndex, genotype;
+    std::string sample,  genotype;
     gzgets(genotypeFile, buf, sizeof(buf));
 
     int discardedVariants = 0;
@@ -120,7 +120,15 @@ int main(int argc, char* argv[]) {
     //std::cerr << "* Processing genotype file.. This can take a while\n";
     while (gzgets(genotypeFile, buf, sizeof(buf))) {
         std::stringstream ss(buf);
-        ss >> sample >> variantIndex >> variant >> genotype;
+        ss >> sample >> variant >> genotype;
+
+        // ensure that the input genotype is always alt
+        if (genotype != "1|0" && genotype != "0|1" && genotype != "1|1") {
+               std::cerr << "Error: Unexpected genotype value (" << genotype << ") in sample " << sample << " for variant " << variant << "." << std::endl;
+               return 1;
+	}
+
+	// continue to find corresponding gene
         if (variantToGene.find(variant) != variantToGene.end()) {
                 std::string geneValue = variantToGene[variant].first;
                 std::string modifiedVariant = variant + "-" + genotype;

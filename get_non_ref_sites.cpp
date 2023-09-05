@@ -54,9 +54,9 @@ int main(int argc, char *argv[]) {
     bool has_pp = bcf_hdr_idinfo_exists(header, BCF_HL_FMT, pp_id);
 
     if (has_pp) {
-        gzprintf(out, "Sample\tVariantIndex\tVariant\tGenotype\tPP\n");
+        gzprintf(out, "Sample\tVariant\tGenotype\tPP\n");
     } else {
-        gzprintf(out, "Sample\tVariantIndex\tVariant\tGenotype\n");
+        gzprintf(out, "Sample\tVariant\tGenotype\n");
     }
 
     // Iterate over all samples and variants
@@ -86,16 +86,16 @@ int main(int argc, char *argv[]) {
             int a2 = bcf_gt_allele(ptr[1]);
             if (a1 == 1 && a2 == 1) {
 		if (has_pp){
-		    gzprintf(out, "%s\t%d\t%s:%d:%s:%s\t1|1\t\n", header->samples[i], variant_counter+1, bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1]);
+		    gzprintf(out, "%s\t%s:%d:%s:%s\t1|1\t\n", header->samples[i], bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1]);
 		} else {
-		    gzprintf(out, "%s\t%d\t%s:%d:%s:%s\t1|1\n", header->samples[i], variant_counter+1, bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1]);
+		    gzprintf(out, "%s\t%s:%d:%s:%s\t1|1\n", header->samples[i], bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1]);
         	}    
 	    }
             else if (a1 != a2) {
                 if (has_pp) {
-			gzprintf(out, "%s\t%d\t%s:%d:%s:%s\t%s\t%.2f\n", header->samples[i], variant_counter+1, bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1], a1 < a2 ? "1|0" : "0|1", pp_arr[i]);
+			gzprintf(out, "%s\t%s:%d:%s:%s\t%s\t%.2f\n", header->samples[i], bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1], a1 < a2 ? "1|0" : "0|1", pp_arr[i]);
 		} else {
-			gzprintf(out, "%s\t%d\t%s:%d:%s:%s\t%s\n", header->samples[i], variant_counter+1, bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1], a1 < a2 ? "1|0" : "0|1");
+			gzprintf(out, "%s\t%s:%d:%s:%s\t%s\n", header->samples[i], bcf_hdr_id2name(header, rec->rid), rec->pos+1, rec->d.allele[0], rec->d.allele[1], a1 < a2 ? "1|0" : "0|1");
 		}   
 	}
         }
