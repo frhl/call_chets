@@ -35,7 +35,7 @@ void printUsage(const char* path) {
 	std::cerr << "                 dosages of 0 and 2, targeting compound heterozygotes"  << std::endl;
 	std::cerr << "                 and homozygotes. (Default='additive')"  << std::endl;
 	std::cerr << "\nExample:" << std::endl;
-	std::cerr << "  ./encode_vcf.o called_chets.txt.gz samples.txt additive | bgzip > out.vcf.gz\n\n";
+	std::cerr << "  ./encode_vcf called_chets.txt.gz samples.txt additive | bgzip > out.vcf.gz\n\n";
 }
 
 int main(int argc, char* argv[]) {

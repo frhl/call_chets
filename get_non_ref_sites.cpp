@@ -33,7 +33,7 @@ int main(int argc, char *argv[]) {
         std::cerr << " <input vcf> \tInput VCF/BCF with phased genotypes." << std::endl;       
         std::cerr << " <output file> \tOutput file (with .gz extension\n" << std::endl;       
 	std::cerr << "Example:" << std::endl;
-	std::cerr << " ./get_non_ref_sites.o test/trio.vcf trio.sites.txt.gz\n" << std::endl;
+	std::cerr << " ./get_non_ref_sites test/trio.vcf trio.sites.txt.gz\n" << std::endl;
 	return 1;
     }
 
