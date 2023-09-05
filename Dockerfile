@@ -30,10 +30,13 @@ COPY makefile makefile
 COPY get_non_ref_sites.cpp get_non_ref_sites.cpp
 COPY call_chets.cpp call_chets.cpp
 COPY encode_vcf.cpp encode_vcf.cpp
+COPY .version .version
 RUN make
-mv call_chets /usr/local/bin/.
-mv get_non_ref_sites /usr/local/bin/.
-mv encode_vcf /usr/local/bin/.
+
+# move to folder in PATH
+RUN mv call_chets /usr/local/bin/.
+RUN mv get_non_ref_sites /usr/local/bin/.
+RUN mv encode_vcf /usr/local/bin/.
 
 # Set default command to R when the container starts
 #CMD ["bash"]
