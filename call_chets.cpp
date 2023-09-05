@@ -144,6 +144,12 @@ int main(int argc, char* argv[]) {
 
     gzclose(genotypeFile);
 
+    // Check if there are no matching variants
+    if (uniqueVariantsKept.empty()) {
+        std::cerr << "Error: No matching variants found between the --map and --geno file!" << std::endl;
+        return 1;
+    }
+
     std::cerr << "Variants in mapping file (kept): " << uniqueVariantsKept.size() << std::endl;
     std::cerr << "Variants not in mapping file (Discarded): " << uniqueVariantsDiscarded.size() << std::endl;
     std::cerr << "* Generating sample-gene-variant file.." << std::endl;
