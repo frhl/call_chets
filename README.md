@@ -1,19 +1,16 @@
 # chet tools
 This repository contains C++ scripts tailored for analyses with phased data, specifically involving variant call format (VCF) files.
 
-### Dependencies:
-* htslib:
-* g++
-* zlib1g-dev
-* liblzma-dev
-* libbz2-dev
-* libcurl4-openssl-dev
-* libhts-dev
-
 ### Installation
-Scripts can be compiled using the provided Makefile. Ensure you have all the necessary dependencies installed or the docker.
+Scripts can be compiled using the provided Makefile. Simply navigate to the folder and:
+```
+make
+```
+
+See the `Dockerfile` for required cpp libraries.
 
 ### Usage
+The following guide also assumes that [BCFtools](https://samtools.github.io/bcftools/howtos/install.html) installed.
 
 **Step 1**. We need to create a file of phased sites per gene per sample. First, we filter to AF<1%. If these are not excluded, the resulting file may be very large. We will use BCFtools to create a file in the right format:
 ```
@@ -29,20 +26,7 @@ rinsed and repeated depending on the `--map` input. See below to find examples o
 
 **Step 3**. Convert into a VCF file using an additive encoding with the `--mode` argument. Here, genes with variants on a single haplotype will be encoded as 1 and genes with variants on both haplotypes will be encoded as 2. Use `--mode recessive` to only consider compound heterozygous and homozygous calls.
 ```
-./encode_vcf --input trio.result.txt --samples test/samples.txt --mode additive | bgzip > trio.result.vcf.gz
-bcftools index trio.result.vcf.gz
-zcat trio.result.vcf.gz | cut -f1-10 | head
-##fileformat=VCFv4.2
-##FILTER=<ID=PASS,Description="All filters passed">
-##contig=<ID=chr21>
-##FORMAT=<ID=DS,Number=1,Type=Float,Description="Dosage">
-#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	Sample1
-chr21	1	ENSG00000141956	A	B	.	.	.	DS	0
-chr21	2	ENSG00000141959	A	B	.	.	.	DS	0
-chr21	3	ENSG00000142149	A	B	.	.	.	DS	0
-chr21	4	ENSG00000142156	A	B	.	.	.	DS	0
-chr21	5	ENSG00000142166	A	B	.	.	.	DS	0
-
+./encode_vcf --input trio.result.txt --samples test/samples.txt --mode additive | bgzip > trio.result.vcf.gz && bcftools index trio.result.vcf.gz
 ```
 The following file can now be used downstream. Note, that if multiple chromsomes are combined, then it's important to ensure that the order is correct as plink/bcftools may complain downstream.
 
