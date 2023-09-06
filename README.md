@@ -30,6 +30,7 @@ rinsed and repeated depending on the `--map` input. See below to find examples o
 **Step 3**. Convert into a VCF file using an additive encoding with the `--mode` argument. Here, genes with variants on a single haplotype will be encoded as 1 and genes with variants on both haplotypes will be encoded as 2. Use `--mode recessive` to only consider compound heterozygous and homozygous calls.
 ```
 ./encode_vcf --input trio.result.txt --samples test/samples.txt --mode additive | bgzip > trio.result.vcf.gz
+bcftools index trio.result.vcf.gz
 zcat trio.result.vcf.gz | cut -f1-10 | head
 ##fileformat=VCFv4.2
 ##FILTER=<ID=PASS,Description="All filters passed">
@@ -43,6 +44,8 @@ chr21	4	ENSG00000142156	A	B	.	.	.	DS	0
 chr21	5	ENSG00000142166	A	B	.	.	.	DS	0
 
 ```
+The following file can now be used downstream. Note, that if multiple chromsomes are combined, then it's important to ensure that the order is correct as plink/bcftools may complain downstream.
+
 
 ### Mapping file
 The mapping file can be obtained from running VEP on the variants of interest and extracting (using bash) the variant ID and the gene ID. Here is an example of a mapping file:
