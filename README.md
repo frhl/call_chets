@@ -1,4 +1,4 @@
-# chet tools
+# Call compound heterozygous and homozygous sites by genes
 This repository contains C++ scripts tailored for analyses with phased data, specifically involving variant call format (VCF) files.
 
 ### Installation
