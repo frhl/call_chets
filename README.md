@@ -9,8 +9,6 @@ This repository contains C++ scripts tailored for analyses with phased data, spe
 make
 ```
 
-### Prerequisites
-
 ### Usage
 
 **Step 1: Create a Phased Sites File**. 
