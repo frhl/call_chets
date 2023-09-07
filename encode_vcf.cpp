@@ -200,46 +200,49 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << std::endl;
-    int rowIndex = 0;
     // Print the output data
-    for (const auto &genePair : geneSampleDosage) {
-        rowIndex++;
-	int currentAC = geneAC[genePair.first];
-	int currentBI = geneBI[genePair.first];
-	int currentChet = geneChet[genePair.first];
-	int currentHom = geneHom[genePair.first];
-	int currentHet = geneHet[genePair.first];
-	int currentCis = geneCis[genePair.first];
-	// only output variants that fit our criteria
-	if (currentAC >= minAC && currentAC < maxAC) {
+    for (const auto& chr : contigs) {
+        int rowIndex = 0;
+	for (const auto &genePair : geneSampleDosage) {
+            if (geneToChromosome[genePair.first] == chr) {  // Only process genes on the current chromosome
+		rowIndex++;
+		int currentAC = geneAC[genePair.first];
+		int currentBI = geneBI[genePair.first];
+		int currentChet = geneChet[genePair.first];
+		int currentHom = geneHom[genePair.first];
+		int currentHet = geneHet[genePair.first];
+		int currentCis = geneCis[genePair.first];
+		// only output variants that fit our criteria
+		if (currentAC >= minAC && currentAC < maxAC) {
 
-            // get left side of VCF body
-            std::cout << geneToChromosome[genePair.first] 
-                  << "\t" << rowIndex 
-                  << "\t" << genePair.first 
-                  << "\tA\tB\t.\t.\t"
-                  << "AC=" << currentAC 
-                  << ";BI=" << currentBI 
-                  << ";CHET=" << currentChet 
-                  << ";HOM=" << currentHom 
-                  << ";CIS=" << currentCis 
-                  << ";HET=" << currentHet 
-                  << "\tDS";  
-	    
-            // get right side of body VCF
-            for (const auto& sample : samples) {
-                std::cout << "\t";
+		    // get left side of VCF body
+		    std::cout << geneToChromosome[genePair.first] 
+			  << "\t" << rowIndex 
+			  << "\t" << genePair.first 
+			  << "\tA\tB\t.\t.\t"
+			  << "AC=" << currentAC 
+			  << ";BI=" << currentBI 
+			  << ";CHET=" << currentChet 
+			  << ";HOM=" << currentHom 
+			  << ";CIS=" << currentCis 
+			  << ";HET=" << currentHet 
+			  << "\tDS";  
+		    
+		    // get right side of body VCF
+		    for (const auto& sample : samples) {
+			std::cout << "\t";
 
-                if (genePair.second.find(sample) != genePair.second.end()) {
-                    std::cout << genePair.second.at(sample);
-                } else {
-                    std::cout << "0";  // Default to 0 if sample-gene combo doesn't exist
-                }
-            }
-            std::cout << std::endl;
-	}
+			if (genePair.second.find(sample) != genePair.second.end()) {
+			    std::cout << genePair.second.at(sample);
+			} else {
+			    std::cout << "0";  // Default to 0 if sample-gene combo doesn't exist
+			}
+		    }
+		    std::cout << std::endl;
+		}
+	    }
+       }
     }
 
     return 0;
 }
-

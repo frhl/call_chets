@@ -194,7 +194,7 @@ int main(int argc, char* argv[]) {
                 callValue = "hom" ;
 		dosage = 2;
 	    } else if (count10 >= 0 && count01 >= 0 && count11 > 0) {
-	    	callValue = "hom+het";
+	    	callValue = "hom"; // previous "hom+het"
 		dosage = 2;
 	    } else if (count10 > 0 && count01 > 0 && count11 == 0) {
             	callValue="chet";
@@ -216,4 +216,6 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+
 
