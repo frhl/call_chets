@@ -19,6 +19,8 @@ std::string getVersion() {
     return version;
 }
 
+
+
 void printUsage(const char* path) {
 	std::string version = getVersion();
 	std::cerr << "\nProgram: chet tools v" << version << "\n" << std::endl;

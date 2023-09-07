@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 
+
 std::string getVersion() {
     std::ifstream versionFile(".version");
     if (!versionFile.is_open()) {
@@ -211,7 +212,7 @@ int main(int argc, char* argv[]) {
 	int currentCis = geneCis[genePair.first];
 	// only output variants that fit our criteria
 	if (currentAC >= minAC && currentAC < maxAC) {
-            
+
             // get left side of VCF body
             std::cout << geneToChromosome[genePair.first] 
                   << "\t" << rowIndex 
