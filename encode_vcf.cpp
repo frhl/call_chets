@@ -6,6 +6,7 @@
 #include <vector>
 #include <sstream>
 #include <string>
+#include <algorithm>
 
 
 std::string getVersion() {
@@ -39,6 +40,33 @@ void printUsage(const char* path) {
 	std::cerr << "\nExample:" << std::endl;
 	std::cerr << "  ./encode_vcf called_chets.txt.gz samples.txt additive | bgzip > out.vcf.gz\n\n";
 }
+
+
+std::vector<std::string> sortChromosomes(const std::set<std::string>& contigs) {
+    std::vector<std::string> chromosomes(contigs.begin(), contigs.end());
+    std::sort(chromosomes.begin(), chromosomes.end(), [](const std::string& a, const std::string& b) {
+        // Extract the part after 'chr' prefix
+        std::string a_num = a.substr(0, 3) == "chr" ? a.substr(3) : a;
+        std::string b_num = b.substr(0, 3) == "chr" ? b.substr(3) : b;
+
+        // If both are numeric chromosomes
+        if (isdigit(a_num[0]) && isdigit(b_num[0])) {
+            return std::stoi(a_num) < std::stoi(b_num);
+        }
+        // If a is numeric but b is not (e.g., a = chr2, b = chrX)
+        if (isdigit(a_num[0]) && !isdigit(b_num[0])) {
+            return true;
+        }
+        // If b is numeric but a is not
+        if (!isdigit(a_num[0]) && isdigit(b_num[0])) {
+            return false;
+        }
+        // If neither are numeric (e.g., chrX, chrY, etc.), then just use lexicographical order
+        return a < b;
+    });
+    return chromosomes;
+}
+
 
 int main(int argc, char* argv[]) {
     
@@ -181,10 +209,13 @@ int main(int argc, char* argv[]) {
 
     gzclose(longFile);
 
+    // sort chromosomes
+    std::vector<std::string> sortedContigs = sortChromosomes(contigs);
+
     // Print the output header
     std::cout << "##fileformat=VCFv4.2\n";
     std::cout << "##FILTER=<ID=PASS,Description=\"All filters passed\">\n";
-    for (const auto& chr : contigs) {
+    for (const auto& chr : sortedContigs) {
         std::cout << "##contig=<ID=" << chr << ">\n";
     }
     std::cout << "##FORMAT=<ID=DS,Number=1,Type=Float,Description=\"Dosage\">\n";
@@ -201,7 +232,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << std::endl;
     // Print the output data
-    for (const auto& chr : contigs) {
+    for (const auto& chr : sortedContigs) {
         int rowIndex = 0;
 	for (const auto &genePair : geneSampleDosage) {
             if (geneToChromosome[genePair.first] == chr) {  // Only process genes on the current chromosome
