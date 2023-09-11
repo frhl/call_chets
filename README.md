@@ -50,6 +50,25 @@ Variant Gene Info
 ```
 
 
+### `run_call_chets.sh`: A wrapper that combines all the above 
+That script combines several tools to a pipeline for CompHet calling. In particular, for a given chromosome:
+1. Calls BCFtools (alternative to `get_non_ref_sites`) to extract non-ref genotypes for a phased BCF. 
+2. Then uses `prepare_genemap.py` to prepare gene-variant maps according to each consequence (e.g. pLoF + damaging_missense).
+3. Based on that, it calls `call_chets` to detect CompHet events from the output of step-1.
+4. Finally, it runs `encode_vcf` to create a VCF based on each consequence and type of effects, e.g. additive or recessive.
+
+As a last step, we could combine any chrom-based files to one genome-wide by running
+```
+for consq in pLoF pLoF_damaging damaging_missense synonymous; do
+    for mode in additive recessive; do
+        echo FIXTHIS.chr{1..22}.$mode.$consq.vcf.gz| tr ' ' '\n' > files.txt 
+        bcftools concat -f files.txt -Oz -o FIXTHIS.chrALL.$mode.$consq.vcf.gz
+    done
+done
+```
+
+
+
 
 
 
