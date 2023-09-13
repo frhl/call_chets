@@ -156,7 +156,7 @@ int main(int argc, char* argv[]) {
 
     std::cerr << "Variants in mapping file (kept): " << uniqueVariantsKept.size() << std::endl;
     std::cerr << "Variants not in mapping file (Discarded): " << uniqueVariantsDiscarded.size() << std::endl;
-    std::cout << "Variants mapping to more than one gene: " << multiGeneVariants.size() << std::endl;
+    std::cerr << "Variants mapping to more than one gene: " << multiGeneVariants.size() << std::endl;
     std::cerr << "* Generating sample-gene-variant file.." << std::endl;
 
     // Print the output
