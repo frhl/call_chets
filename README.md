@@ -19,7 +19,7 @@ bcftools view trio.vcf --max-af 0.01 -Ou | bcftools query -i'GT="alt"' -f'[%SAMP
 ```
 
 
-**Step 2: Call bi and mono-allelic variants**. 
+**Step 2: Call bi/mono allelic variants**. 
 This step calls compound heterozygous, homozygous, heterozygous, and cis variants by a group (typically genes). You can repeat this step based on the `--map` argument.
 
 ```
@@ -29,7 +29,7 @@ This step calls compound heterozygous, homozygous, heterozygous, and cis variant
 ```
 
 **Step 3: Create VCF**
-Here, you'll convert the results into a VCF file with additive or recessive encoding. Genes with variants on either the paternal or maternal haplotype  will be encoded with a dosage of 1, while genes with variants on both haplotypes will be encoded as a dosage of 2. Use `--mode recessive` to only keep sites with both haplotypes affected.
+Convert the results into a VCF file with additive or recessive encoding. Genes with variants on either the paternal or maternal haplotype  will be encoded with a dosage of 1, while genes with variants on both haplotypes will be encoded as a dosage of 2. Use `--mode recessive` to only keep sites with both haplotypes affected.
 ```
 ./encode_vcf \
   --input trio.result.txt \
@@ -49,6 +49,8 @@ Variant Gene Info
 20:2220:G:A geneA frameshift_variant
 ```
 
+### Updates
+- 13-09-23: A single variant can now map to multiple genes
 
 
 
