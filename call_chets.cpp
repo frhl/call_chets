@@ -90,22 +90,19 @@ int main(int argc, char* argv[]) {
 
 
     // Mapping variant to gene
-    //std::map<std::string, std::string> variantToGene;
-    std::map<std::string, std::pair<std::string, std::string>> variantToGene; 
+    std::map<std::string, std::vector<std::pair<std::string, std::string>>> variantToGene;
     std::string variant, gene, thirdColumn;
     std::set<std::string> uniqueVariantsKept;
     std::set<std::string> uniqueVariantsDiscarded;
+    std::set<std::string> multiGeneVariants;
     char buf[1024];
 
     //std::cerr << "* Processing mapping and genotype file..\n";
     while (gzgets(mappingFile, buf, sizeof(buf))) {  // Use gzgets to read a line
         std::stringstream ss(buf);
         ss >> variant >> gene;
-        if (ss >> thirdColumn) {  // Try to read the third column
-                variantToGene[variant] = {gene, thirdColumn};
-        } else {
-                variantToGene[variant] = {gene, ""};  // No third column
-        }
+        std::pair<std::string, std::string> geneInfo = ss >> thirdColumn ? std::make_pair(gene, thirdColumn) : std::make_pair(gene, "");
+        variantToGene[variant].push_back(geneInfo);	
     }
 
     gzclose(mappingFile);
@@ -132,14 +129,19 @@ int main(int argc, char* argv[]) {
 
 	// continue to find corresponding gene
         if (variantToGene.find(variant) != variantToGene.end()) {
-                std::string geneValue = variantToGene[variant].first;
-                std::string modifiedVariant = variant + "-" + genotype;
-                if (!variantToGene[variant].second.empty()) {
-                        modifiedVariant += "-" + variantToGene[variant].second;
-                }
-                sampleGeneVariants[sample][geneValue].push_back(modifiedVariant);
-                uniqueVariantsKept.insert(variant);
-        } else {
+		if (variantToGene[variant].size() > 1) {
+			multiGeneVariants.insert(variant);
+		}
+		for (const auto& geneInfoPair : variantToGene[variant]) {
+			std::string geneValue = geneInfoPair.first;
+			std::string modifiedVariant = variant + "-" + genotype;
+			if (!geneInfoPair.second.empty()) {
+			    modifiedVariant += "-" + geneInfoPair.second;
+			}
+			sampleGeneVariants[sample][geneValue].push_back(modifiedVariant);
+			uniqueVariantsKept.insert(variant);
+		}
+    	} else {
                 uniqueVariantsDiscarded.insert(variant);
         }
      }
@@ -154,6 +156,7 @@ int main(int argc, char* argv[]) {
 
     std::cerr << "Variants in mapping file (kept): " << uniqueVariantsKept.size() << std::endl;
     std::cerr << "Variants not in mapping file (Discarded): " << uniqueVariantsDiscarded.size() << std::endl;
+    std::cout << "Variants mapping to more than one gene: " << multiGeneVariants.size() << std::endl;
     std::cerr << "* Generating sample-gene-variant file.." << std::endl;
 
     // Print the output
