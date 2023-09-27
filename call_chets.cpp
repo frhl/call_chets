@@ -7,6 +7,7 @@
 #include <zlib.h>
 #include <set>
 
+
 std::string getVersion() {
     std::ifstream versionFile(".version");
     if (!versionFile.is_open()) {
