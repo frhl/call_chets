@@ -50,6 +50,14 @@ Incorporate prior scores of pathogenicity and model the probability of complete 
 ```
 
 
+This is an example on output when all these arguments are specified and `| grep chet`. Sample, gene, configuration, dosage, probability of knockout based on alpha missense score and variant configuration (phase seperated by '|'):
+```
+sample1 ENSG00000142173 chet 2 0.0837 chr21:46126166:G:A:missense_variant|chr21:46126476:T:TGGCCC:intron_variant
+sample2 ENSG00000142207 chet 2 0.1115 chr21:32321952:C:T:splice_region_variant|chr21:32375439:T:G:missense_variant
+sample3 ENSG00000142173 chet 2 0.0180959 chr21:46114063:G:A:missense_variant|chr21:46126166:G:A:missense_variant
+
+```
+
 
 **Step 3: Create VCF**
 Convert the results into a VCF file with additive or recessive encoding. Genes with variants on either the paternal or maternal haplotype  will be encoded with a dosage of 1, while genes with variants on both haplotypes will be encoded as a dosage of 2. Use `--mode recessive` to only keep sites with both haplotypes affected.
