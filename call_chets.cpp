@@ -42,15 +42,15 @@ void printUsage(const char *path)
     std::cerr << "                              two columns with a header in the format: variant, gene, info (optional)." << std::endl;
     std::cerr << "  --info-map/-i               : Optional. File mapping variants to their corresponding information." << std::endl;
     std::cerr << "                              The file should contain variant, gene, and info columns, mapping each variant to its information." << std::endl;
-    std::cerr << "  --dosage-map/-p             : Optional. File mapping variants to their dosage information." << std::endl;
-    std::cerr << "                              The file should contain variant, gene, and dosage columns." << std::endl;
+    std::cerr << "  --score-map/-p             : Optional. File mapping variants to their score information." << std::endl;
+    std::cerr << "                              The file should contain variant, gene, and score columns." << std::endl;
     std::cerr << "  --haplotype-collapse/-c     : Optional. Specifies the rule for combining variant dosages within a haplotype." << std::endl;
     std::cerr << "                              Options are 'multiplicative', 'burden' or 'max'. Default is 'multiplicative'." << std::endl;
     std::cerr << "  --verbose/-v                : Optional. Print out more information" << std::endl;
 
     std::cerr << "\nOutput Format:" << std::endl;
     std::cerr << "  The output will be printed to the console with the following columns:" << std::endl;
-    std::cerr << "  Sample, Gene, Call, Dosage, (and possibly) Variant Information." << std::endl;
+    std::cerr << "  Sample, Gene, Call, Dosage, Score (Will be zero unless --score-map is defined), info (with --info-map)" << std::endl;
 
     std::cerr << "\nNotes:" << std::endl;
     std::cerr << "  Ensure that the --geno file is appropriately formatted (optionally gzipped)." << std::endl;
@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
     std::string pathGeno;
     std::string pathMap;
     std::string pathInfoMap;
-    std::string pathDosageMap;
+    std::string pathScoreMap;
     std::string haplotypeCollapseRule = "multiplicative";
     bool verbose = false;
 
@@ -88,9 +88,9 @@ int main(int argc, char *argv[])
         {
             pathInfoMap = argv[++i];
         }
-        else if ((arg == "--dosage-map" || arg == "-p") && i + 1 < argc)
+        else if ((arg == "--score-map" || arg == "-p") && i + 1 < argc)
         {
-            pathDosageMap = argv[++i];
+            pathScoreMap = argv[++i];
         }
         else if ((arg == "--haplotype-collapse" || arg == "-c") && i + 1 < argc)
         {
@@ -179,27 +179,27 @@ int main(int argc, char *argv[])
         }
     }
 
-    // read the dosage-map file if provided
-    std::map<std::pair<std::string, std::string>, float> variantGeneDosage;
-    if (!pathDosageMap.empty())
+    // read the score-map file if provided
+    std::map<std::pair<std::string, std::string>, float> variantGeneScore;
+    if (!pathScoreMap.empty())
     {
-        gzFile dosageMapFile = gzopen(pathDosageMap.c_str(), "rb");
-        if (!dosageMapFile)
+        gzFile scoreMapFile = gzopen(pathScoreMap.c_str(), "rb");
+        if (!scoreMapFile)
         {
-            std::cerr << "Warning: Cannot open --dosage-map file for reading: " << pathDosageMap << ". Continuing without dosage data." << std::endl;
+            std::cerr << "Warning: Cannot open --score-map file for reading: " << pathScoreMap << ". Continuing without score data." << std::endl;
         }
         else
         {
             char pathoBuf[1024];
-            while (gzgets(dosageMapFile, pathoBuf, sizeof(pathoBuf)))
+            while (gzgets(scoreMapFile, pathoBuf, sizeof(pathoBuf)))
             {
                 std::stringstream ss(pathoBuf);
                 std::string variant, gene;
-                float newDosage;
-                ss >> variant >> gene >> newDosage;
-                variantGeneDosage[std::make_pair(variant, gene)] = newDosage;
+                float newScore;
+                ss >> variant >> gene >> newScore;
+                variantGeneScore[std::make_pair(variant, gene)] = newScore;
             }
-            gzclose(dosageMapFile);
+            gzclose(scoreMapFile);
         }
     }
 
@@ -343,73 +343,73 @@ int main(int argc, char *argv[])
             float geneScore = 0.0f;
 
             // calculate probability of knockout for each haplotype
-            if (!pathDosageMap.empty() && (callValue == "hom" || callValue == "chet"))
+            if (!pathScoreMap.empty() && (callValue == "hom" || callValue == "chet"))
             {
 
-                float haplotype1Dosage = 1.0f;
-                float haplotype2Dosage = 1.0f;
+                float haplotype1Score = 1.0f;
+                float haplotype2Score = 1.0f;
 
                 // keep track of how many variants are mapped here
-                int countHaplotype1DosageMapped = 0;
-                int countHaplotype2DosageMapped = 0;
+                int counthaplotype1ScoreMapped = 0;
+                int counthaplotype2ScoreMapped = 0;
                 int totalHaplotype1Variants = haplotype1Variants.size();
                 int totalHaplotype2Variants = haplotype2Variants.size();
 
                 // Run for each haplotype separately (haplotype 1)
                 for (const auto &variant : haplotype1Variants)
                 {
-                    auto it = variantGeneDosage.find(std::make_pair(variant, gene));
-                    float mappedDosage = (it != variantGeneDosage.end()) ? it->second : 1.0f; // default to 1.0 if not found
-                    if (mappedDosage != 1.0f)
-                        countHaplotype1DosageMapped++;
+                    auto it = variantGeneScore.find(std::make_pair(variant, gene));
+                    float mappedScore = (it != variantGeneScore.end()) ? it->second : 1.0f; // default to 1.0 if not found
+                    if (mappedScore != 1.0f)
+                        counthaplotype1ScoreMapped++;
                     if (haplotypeCollapseRule == "multiplicative")
                     {
-                        haplotype1Dosage *= (1 - mappedDosage);
+                        haplotype1Score *= (1 - mappedScore);
                     }
                     else if (haplotypeCollapseRule == "max")
                     {
-                        haplotype1Dosage = std::max(haplotype1Dosage, mappedDosage);
+                        haplotype1Score = std::max(haplotype1Score, mappedScore);
                     }
                     else // burden
-                    { 
-                        haplotype1Dosage += mappedDosage;
+                    {
+                        haplotype1Score += mappedScore;
                     }
                 }
 
                 // Run for each haplotype separately (haplotype 2)
                 for (const auto &variant : haplotype2Variants)
                 {
-                    auto it = variantGeneDosage.find(std::make_pair(variant, gene));
-                    float mappedDosage = (it != variantGeneDosage.end()) ? it->second : 1.0f; // default to 1.0 if not found
-                    if (mappedDosage != 1.0f)
-                        countHaplotype2DosageMapped++;
+                    auto it = variantGeneScore.find(std::make_pair(variant, gene));
+                    float mappedScore = (it != variantGeneScore.end()) ? it->second : 1.0f; // default to 1.0 if not found
+                    if (mappedScore != 1.0f)
+                        counthaplotype2ScoreMapped++;
                     if (haplotypeCollapseRule == "multiplicative")
                     {
-                        haplotype2Dosage *= (1 - mappedDosage);
+                        haplotype2Score *= (1 - mappedScore);
                     }
                     else if (haplotypeCollapseRule == "max")
                     {
-                        haplotype2Dosage = std::max(haplotype2Dosage, mappedDosage);
+                        haplotype2Score = std::max(haplotype2Score, mappedScore);
                     }
                     else // burden
-                    { 
-                        haplotype2Dosage += mappedDosage;
+                    {
+                        haplotype2Score += mappedScore;
                     }
                 }
 
-                // 1 minus the haplotype dosage is the probability of knockout for each haplotype
+                // 1 minus the haplotype score is the probability of knockout for each haplotype
                 if (haplotypeCollapseRule == "multiplicative")
                 {
-                    haplotype2Dosage = 1 - haplotype2Dosage;
-                    haplotype1Dosage = 1 - haplotype1Dosage;
+                    haplotype2Score = 1 - haplotype2Score;
+                    haplotype1Score = 1 - haplotype1Score;
                 }
 
                 // count total variants mapped by gene-sample
-                totalMapped = countHaplotype1DosageMapped + countHaplotype2DosageMapped;
+                totalMapped = counthaplotype1ScoreMapped + counthaplotype2ScoreMapped;
                 totalVariants = totalHaplotype1Variants + totalHaplotype2Variants;
 
-                // compute final dosage that is the product of the two haplotypes
-                geneScore = haplotype1Dosage * haplotype2Dosage;
+                // compute final score that is the product of the two haplotypes
+                geneScore = haplotype1Score * haplotype2Score;
             }
 
             // Print results here
@@ -454,4 +454,5 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+
 
