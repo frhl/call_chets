@@ -1,7 +1,7 @@
 # Call compound heterozygous and homozygous sites by genes using phased genotypes
 This repository contains C++ scripts tailored for analyses with phased data, specifically involving variant call format (VCF) files.
 
-### Installation
+## Installation
 1. Ensure you have the necessary cpp libraries. Check the provided `Dockerfile` for the complete list.
 2. Install [BCFtools](https://samtools.github.io/bcftools/howtos/install.html).
 3. To compile the scripts, navigate to the repository's directory and run:
@@ -9,9 +9,9 @@ This repository contains C++ scripts tailored for analyses with phased data, spe
 make
 ```
 
-### Usage
+## Usage
 
-**Step 1: Create a Phased Sites File**.
+### Step 1: Create a Phased Sites File
 Generate a file containing phased sites per gene for each sample. Filter to allele frequency less than 1% using BCFtools.
 
 ```
@@ -19,7 +19,7 @@ bcftools view trio.vcf --max-af 0.01 -Ou | bcftools query -i'GT="alt"' -f'[%SAMP
 ```
 
 
-**Step 2: Call bi/mono allelic variants**.
+### Step 2: Call bi/mono allelic variants
 Call compound heterozygous and other variant types per group (e.g., genes). Repeat this step as needed based on the `--gene-map` argument:
 
 ```
@@ -59,7 +59,7 @@ sample3 ENSG00000142173 chet 2 0.0180959 chr21:46114063:G:A:missense_variant|chr
 ```
 
 
-**Step 3: Create VCF**
+### Step 3: Create VCF
 Convert the results into a VCF file with additive or recessive encoding. Genes with variants on either the paternal or maternal haplotype  will be encoded with a dosage of 1, while genes with variants on both haplotypes will be encoded as a dosage of 2. Use `--mode recessive` to only keep sites with both haplotypes affected.
 ```
 ./encode_vcf \
@@ -105,7 +105,7 @@ chr21:10541158:A:C	ENSG00000274391	0.0729
 
 
 
-### `run_call_chets.sh`: A wrapper that combines all the above (to be tested with new version)
+## `run_call_chets.sh`: A wrapper that combines all the above (to be tested with new version)
 That script combines several tools to a pipeline for CompHet calling. In particular, for a given chromosome:
 1. Calls BCFtools (alternative to `get_non_ref_sites`) to extract non-ref genotypes for a phased BCF.
 2. Then uses `prepare_genemap.py` to prepare gene-variant maps according to each consequence (e.g. pLoF + damaging_missense).

@@ -212,7 +212,7 @@ int main(int argc, char *argv[])
         iss >> sample >> chromosome >> gene >> configuration >> dosage >> variantInfo;
 
         // count instances of mono-allelic
-        if (mode == "recessive" && dosage == 1)
+        if (mode == "recessive" && dosage == 1.0f)
         {
             dosage = 0;
         }
