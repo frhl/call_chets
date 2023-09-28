@@ -37,7 +37,8 @@ void printUsage(const char *path)
     std::cerr << "  --mode/-m    : Use 'additive' for dosages of 0, 1, and 2. This keeps" << std::endl;
     std::cerr << "                 heterozygotes and cis variants. Use 'recessive' for" << std::endl;
     std::cerr << "                 dosages of 0 and 2, targeting compound heterozygotes" << std::endl;
-    std::cerr << "                 and homozygotes. (Default='additive')" << std::endl;
+    std::cerr << "                 and homozygotes. Use 'recessive-prob' to encode probability" << std::endl;
+    std::cerr << "                 of both haplotypes being affected (Default='additive')." << std::endl;
     std::cerr << "  --min-ac     : Filters to genes with sum of DS >= argument" << std::endl;
     std::cerr << "  --max-ac     : Filters to genes with sum of DS < argument" << std::endl;
     std::cerr << "\nExample:" << std::endl;
@@ -82,7 +83,7 @@ int main(int argc, char *argv[])
     for (int i = 1; i < argc; ++i)
     {
         std::string arg = argv[i];
-        if (arg == "--help" || arg == "-h")
+        if (arg == "--help" || arg == "-h" || arg == "-?" || arg == "-help")
         {
             printUsage(argv[0]);
             return 0;
@@ -147,9 +148,10 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (mode != "additive" && mode != "recessive")
+    if (mode != "additive" && mode != "recessive" && mode != "recessive-prob")
     {
-        std::cerr << "Error: Invalid dosage encoding mode provided. Expecting 'additive' or 'recessive'." << std::endl;
+        std::cerr << "Error: Invalid dosage encoding mode provided. Expecting 'additive', 'recessive' or 'recessive-prob'." << std::endl;
+        printUsage(argv[0]);
         return 1;
     }
 
@@ -200,8 +202,9 @@ int main(int argc, char *argv[])
     // Process long format file
     std::string line, sample, chromosome, gene, configuration, variantInfo;
     std::set<std::string> contigs;
-    int dosage;
     char buffer[4096];
+    float dosage;
+
     while (gzgets(longFile, buffer, sizeof(buffer)))
     {
         std::string line(buffer);
@@ -214,32 +217,37 @@ int main(int argc, char *argv[])
             dosage = 0;
         }
 
-        // count individual sites
-        if (configuration == "chet" && dosage == 2)
+        // count indiviual sites
+        if (configuration == "chet")
         {
             geneChet[gene] += 1;
+            geneAC[gene] += 2;
         }
-        else if (configuration == "hom" && dosage == 2)
+        else if (configuration == "hom")
         {
             geneHom[gene] += 1;
+            geneAC[gene] += 2;
         }
-        else if (configuration == "cis" && dosage == 1)
+        else if (configuration == "cis")
         {
             geneCis[gene] += 1;
+            geneAC[gene] += 1;
         }
-        else if (configuration == "het" && dosage == 1)
+        else if (configuration == "het")
         {
             geneHet[gene] += 1;
+            geneAC[gene] += 1;
         }
 
         // count instances of bi-allelic
-        if (dosage == 2)
+        if (configuration == "chet" || configuration == "hom")
         {
             geneBI[gene] += 1;
         }
+
+        // count instances of bi-allelic
         geneToChromosome[gene] = chromosome;
         geneSampleDosage[gene][sample] = dosage;
-        geneAC[gene] += dosage;
         contigs.insert(chromosome);
     }
 
