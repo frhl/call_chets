@@ -25,25 +25,33 @@ std::string getVersion()
 void printUsage(const char *path)
 {
     std::string version = getVersion();
-    std::cerr << "\nProgram: chet tools v" << version << "\n"
-              << std::endl;
-    std::cerr << "Usage: " << path << " --geno <Genotype File> --map <Mapping File>\n"
-              << std::endl;
+    std::cerr << "\nProgram: chet tools v" << version << "\n" << std::endl;
+    std::cerr << "Usage: " << path << " --geno <Genotype File> --map <Mapping File> [--info-map <Info Mapping File>] [--dosage-map <Dosage Mapping File>]\n" << std::endl;
+    
     std::cerr << "\nDescription:" << std::endl;
-    std::cerr << "  Call co-occuring variants using a variant-to-gene mapping file" << std::endl;
-    std::cerr << "  alongside a file containing alternate genotypes." << std::endl;
+    std::cerr << "  The program calls co-occurring variants using a variant-to-gene mapping file alongside a file containing alternate genotypes." << std::endl;
+    std::cerr << "  It calculates the call value and dosage based on the haplotype information of each variant." << std::endl;
+
     std::cerr << "\nInput:" << std::endl;
-    std::cerr << "  --geno/-g : .gz file containing alternate genotype data in the" << std::endl;
-    std::cerr << "              form of sample id, variant id and genotype that is" << std::endl;
-    std::cerr << "              seperated by whitespace. For example a line may look." << std::endl;
-    std::cerr << "              like the following: 'Sample1 chr21:12314:C:T 1|0'." << std::endl;
-    std::cerr << "  --map/-m  : File mapping variants to genes. This is expected" << std::endl;
-    std::cerr << "              to contain at least two columns with a header" << std::endl;
-    std::cerr << "              in the format: variant, gene, info (optional)." << std::endl;
-    std::cerr << "Output Format:" << std::endl;
-    std::cerr << "  Sample Chromosome Gene Call Dosage Variant-Genotype..." << std::endl;
+    std::cerr << "  --geno/-g <Genotype File>  : Required. A gzipped file containing alternate genotype data." << std::endl;
+    std::cerr << "                              The file should have sample id, variant id, and genotype separated by whitespace." << std::endl;
+    std::cerr << "                              Each line might look like the following: 'Sample1 chr21:12314:C:T 1|0'." << std::endl;
+    std::cerr << "  --gene-map/-m <Map File>   : Required. File mapping variants to genes. It should contain at least" << std::endl;
+    std::cerr << "                              two columns with a header in the format: variant, gene, info (optional)." << std::endl;
+    std::cerr << "  --info-map/-i              : Optional. File mapping variants to their corresponding information." << std::endl;
+    std::cerr << "                              The file should contain variant, gene, and info columns, mapping each variant to its information." << std::endl;
+    std::cerr << "  --dosage-map/-p            : Optional. File mapping variants to their dosage information." << std::endl;
+    std::cerr << "                              The file should contain variant, gene, and dosage columns." << std::endl;
+    std::cerr << "  --verbose/-v              : Optional. Print out more information" << std::endl;
+    
+    std::cerr << "\nOutput Format:" << std::endl;
+    std::cerr << "  The output will be printed to the console with the following columns:" << std::endl;
+    std::cerr << "  Sample, Gene, Call, Dosage, (and possibly) Variant Information." << std::endl;
+
     std::cerr << "\nNotes:" << std::endl;
-    std::cerr << "  See README for how to generate --geno file from a VCF/BCF." << std::endl;
+    std::cerr << "  Ensure that the --geno file is appropriately formatted (optionally gzipped)." << std::endl;
+    std::cerr << "  The program will attempt to match variants between the --gene-map and --geno file, discarding those that do not match." << std::endl;
+    std::cerr << "  See the README for more detailed information on how to prepare input files and interpret the output." << std::endl;
 }
 
 int main(int argc, char *argv[])
@@ -53,6 +61,7 @@ int main(int argc, char *argv[])
     std::string pathMap;
     std::string pathInfoMap;
     std::string pathDosageMap;
+    bool verbose = false;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -74,10 +83,13 @@ int main(int argc, char *argv[])
         {
             pathInfoMap = argv[++i];
         }
-
         else if ((arg == "--dosage-map" || arg == "-p") && i + 1 < argc)
         {
             pathDosageMap = argv[++i];
+        }
+        else if ((arg == "--verbose" || arg == "-v") && i + 1 < argc)
+        {
+            verbose = true;
         }
         else
         {
@@ -244,13 +256,18 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    std::cerr << "Variants in mapping file (kept): " << uniqueVariantsKept.size() << std::endl;
-    std::cerr << "Variants not in mapping file (Discarded): " << uniqueVariantsDiscarded.size() << std::endl;
-    std::cerr << "Variants mapping to more than one gene: " << multiGeneVariants.size() << std::endl;
-    std::cerr << "* Generating sample-gene-variant file.." << std::endl;
+    // only print stuff if user wants it
+    if (verbose)
+    {
+        std::cerr << "Variants in mapping file (kept): " << uniqueVariantsKept.size() << std::endl;
+        std::cerr << "Variants not in mapping file (Discarded): " << uniqueVariantsDiscarded.size() << std::endl;
+        std::cerr << "Variants mapping to more than one gene: " << multiGeneVariants.size() << std::endl;
+        std::cerr << "* Generating sample-gene-variant file.." << std::endl;
+        std::cerr << "* Generating output.." << std::endl;
+    }
 
-    std::cerr << "* Generating output.." << std::endl;
 
+    // Print results    
     for (const auto &samplePair : sampleGeneHaplotypeVariant)
     {
         const std::string &sample = samplePair.first;
@@ -305,11 +322,32 @@ int main(int argc, char *argv[])
 
             // Print output here
             std::cout << sample << "\t" << gene << "\t" << callValue << "\t" << dosage;
-            // Add additional output fields as necessary
+            
+            // If you have infoMap available
+            if (!pathInfoMap.empty())
+            {
+                // For Haplotype 1 variants
+                for (const auto &variant : haplotype1Variants)
+                {
+                    std::pair<std::string, std::string> key = std::make_pair(variant, gene);
+                    std::string info = (infoMap.find(key) != infoMap.end()) ? infoMap[key] : "NA";
+                    std::cout << ";" << variant << ":" << info; 
+                }
+
+                // For Haplotype 2 variants
+                for (const auto &variant : haplotype2Variants)
+                {
+                    std::pair<std::string, std::string> key = std::make_pair(variant, gene);
+                    std::string info = (infoMap.find(key) != infoMap.end()) ? infoMap[key] : "NA";
+                    std::cout << ";" << variant << ":" << info; 
+                }
+            }
+
             std::cout << std::endl;
         }
     }
 
     return 0;
 }
+
 
