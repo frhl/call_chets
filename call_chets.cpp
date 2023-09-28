@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -26,9 +25,11 @@ std::string getVersion()
 void printUsage(const char *path)
 {
     std::string version = getVersion();
-    std::cerr << "\nProgram: chet tools v" << version << "\n" << std::endl;
-    std::cerr << "Usage: " << path << " --geno <Genotype File> --map <Mapping File> [--info-map <Info Mapping File>] [--dosage-map <Dosage Mapping File>]\n" << std::endl;
-    
+    std::cerr << "\nProgram: chet tools v" << version << "\n"
+              << std::endl;
+    std::cerr << "Usage: " << path << " --geno <Genotype File> --map <Mapping File> [--info-map <Info Mapping File>] [--dosage-map <Dosage Mapping File>]\n"
+              << std::endl;
+
     std::cerr << "\nDescription:" << std::endl;
     std::cerr << "  The program calls co-occurring variants using a variant-to-gene mapping file alongside a file containing alternate genotypes." << std::endl;
     std::cerr << "  It calculates the call value and dosage based on the haplotype information of each variant." << std::endl;
@@ -44,7 +45,7 @@ void printUsage(const char *path)
     std::cerr << "  --dosage-map/-p             : Optional. File mapping variants to their dosage information." << std::endl;
     std::cerr << "                              The file should contain variant, gene, and dosage columns." << std::endl;
     std::cerr << "  --haplotype-collapse/-c     : Optional. Specifies the rule for combining variant dosages within a haplotype." << std::endl;
-    std::cerr << "                              Options are 'multiplicative' or 'burden'. Default is 'multiplicative'." << std::endl;   
+    std::cerr << "                              Options are 'multiplicative', 'burden' or 'max'. Default is 'multiplicative'." << std::endl;
     std::cerr << "  --verbose/-v                : Optional. Print out more information" << std::endl;
 
     std::cerr << "\nOutput Format:" << std::endl;
@@ -94,13 +95,14 @@ int main(int argc, char *argv[])
         else if ((arg == "--haplotype-collapse" || arg == "-c") && i + 1 < argc)
         {
             haplotypeCollapseRule = argv[++i];
-            if (haplotypeCollapseRule != "multiplicative" && haplotypeCollapseRule != "burden") {
+            if (haplotypeCollapseRule != "multiplicative" && haplotypeCollapseRule != "burden" && haplotypeCollapseRule != "max")
+            {
                 std::cerr << "Error! Invalid haplotype-collapse: " << haplotypeCollapseRule << std::endl;
                 printUsage(argv[0]);
                 return 1;
             }
         }
-        else if ((arg == "--verbose" || arg == "-v") && i + 1 < argc)
+        else if (arg == "--verbose" || arg == "-v")
         {
             verbose = true;
         }
@@ -210,7 +212,7 @@ int main(int argc, char *argv[])
     std::set<std::string> uniqueVariantsKept;
     std::set<std::string> uniqueVariantsDiscarded;
     std::set<std::string> multiGeneVariants;
-    
+
     bool isFirstLine = true;
     while (gzgets(genotypeFile, buf, sizeof(buf)))
     {
@@ -245,11 +247,16 @@ int main(int argc, char *argv[])
                 uniqueVariantsKept.insert(variant);
 
                 // save haplotype
-                if (genotype == "1|0") {
+                if (genotype == "1|0")
+                {
                     sampleGeneHaplotypeVariant[sample][gene][1].push_back(variant); // Haplotype 1
-                } else if (genotype == "0|1") {
+                }
+                else if (genotype == "0|1")
+                {
                     sampleGeneHaplotypeVariant[sample][gene][2].push_back(variant); // Haplotype 2
-                } else if (genotype == "1|1") {
+                }
+                else if (genotype == "1|1")
+                {
                     sampleGeneHaplotypeVariant[sample][gene][1].push_back(variant); // Haplotype 1
                     sampleGeneHaplotypeVariant[sample][gene][2].push_back(variant); // Haplotype 2
                 }
@@ -260,7 +267,6 @@ int main(int argc, char *argv[])
             uniqueVariantsDiscarded.insert(variant);
         }
     }
-
 
     // Check if there are no matching variants
     if (uniqueVariantsKept.empty())
@@ -279,8 +285,7 @@ int main(int argc, char *argv[])
         std::cerr << "* Generating output.." << std::endl;
     }
 
-
-    // Print results    
+    // Print results
     for (const auto &samplePair : sampleGeneHaplotypeVariant)
     {
         const std::string &sample = samplePair.first;
@@ -294,20 +299,17 @@ int main(int argc, char *argv[])
 
             std::string callValue;
             int dosage = 0;
-            float probKnockout = 0.0f;
 
             if (!haplotype1Variants.empty() && haplotype2Variants.empty())
             {
                 // Variants only on haplotype 1
                 callValue = (haplotype1Variants.size() == 1) ? "het" : "cis";
-                probKnockout = 0.0f;
                 dosage = 1;
             }
             else if (!haplotype2Variants.empty() && haplotype1Variants.empty())
             {
                 // Variants only on haplotype 2
                 callValue = (haplotype2Variants.size() == 1) ? "het" : "cis";
-                probKnockout = 0.0f;
                 dosage = 1;
             }
             else if (!haplotype1Variants.empty() && !haplotype2Variants.empty())
@@ -320,14 +322,12 @@ int main(int argc, char *argv[])
                 {
                     // There is at least one variant in common between the two haplotypes
                     callValue = "hom";
-                    probKnockout = 1.0f;
                     dosage = 2;
                 }
                 else
                 {
                     // Different variants on each haplotype
                     callValue = "chet";
-                    probKnockout = 1.0f;
                     dosage = 2;
                 }
             }
@@ -340,9 +340,11 @@ int main(int argc, char *argv[])
 
             int totalMapped = 0;
             int totalVariants = 0;
+            float geneScore = 0.0f;
 
             // calculate probability of knockout for each haplotype
-            if (!pathDosageMap.empty() && (callValue == "hom" || callValue == "chet")) {
+            if (!pathDosageMap.empty() && (callValue == "hom" || callValue == "chet"))
+            {
 
                 float haplotype1Dosage = 1.0f;
                 float haplotype2Dosage = 1.0f;
@@ -354,32 +356,51 @@ int main(int argc, char *argv[])
                 int totalHaplotype2Variants = haplotype2Variants.size();
 
                 // Run for each haplotype separately (haplotype 1)
-                for (const auto &variant : haplotype1Variants) {
+                for (const auto &variant : haplotype1Variants)
+                {
                     auto it = variantGeneDosage.find(std::make_pair(variant, gene));
                     float mappedDosage = (it != variantGeneDosage.end()) ? it->second : 1.0f; // default to 1.0 if not found
-                    if (mappedDosage != 1.0f) countHaplotype1DosageMapped++;
-                    if (haplotypeCollapseRule == "multiplicative") {
-                        haplotype1Dosage *= (1 - mappedDosage); 
-                    } else { // burden
+                    if (mappedDosage != 1.0f)
+                        countHaplotype1DosageMapped++;
+                    if (haplotypeCollapseRule == "multiplicative")
+                    {
+                        haplotype1Dosage *= (1 - mappedDosage);
+                    }
+                    else if (haplotypeCollapseRule == "max")
+                    {
+                        haplotype1Dosage = std::max(haplotype1Dosage, mappedDosage);
+                    }
+                    else // burden
+                    { 
                         haplotype1Dosage += mappedDosage;
                     }
                 }
 
                 // Run for each haplotype separately (haplotype 2)
-                for (const auto &variant : haplotype2Variants) {
+                for (const auto &variant : haplotype2Variants)
+                {
                     auto it = variantGeneDosage.find(std::make_pair(variant, gene));
                     float mappedDosage = (it != variantGeneDosage.end()) ? it->second : 1.0f; // default to 1.0 if not found
-                    if (mappedDosage != 1.0f) countHaplotype2DosageMapped++;
-                    if (haplotypeCollapseRule == "multiplicative") {
-                        haplotype2Dosage *= (1 - mappedDosage); 
-                    } else { // burden
+                    if (mappedDosage != 1.0f)
+                        countHaplotype2DosageMapped++;
+                    if (haplotypeCollapseRule == "multiplicative")
+                    {
+                        haplotype2Dosage *= (1 - mappedDosage);
+                    }
+                    else if (haplotypeCollapseRule == "max")
+                    {
+                        haplotype2Dosage = std::max(haplotype2Dosage, mappedDosage);
+                    }
+                    else // burden
+                    { 
                         haplotype2Dosage += mappedDosage;
                     }
                 }
 
                 // 1 minus the haplotype dosage is the probability of knockout for each haplotype
-                if (haplotypeCollapseRule == "multiplicative") {
-                    haplotype2Dosage = 1 - haplotype2Dosage; 
+                if (haplotypeCollapseRule == "multiplicative")
+                {
+                    haplotype2Dosage = 1 - haplotype2Dosage;
                     haplotype1Dosage = 1 - haplotype1Dosage;
                 }
 
@@ -388,31 +409,44 @@ int main(int argc, char *argv[])
                 totalVariants = totalHaplotype1Variants + totalHaplotype2Variants;
 
                 // compute final dosage that is the product of the two haplotypes
-                probKnockout = haplotype1Dosage * haplotype2Dosage;
+                geneScore = haplotype1Dosage * haplotype2Dosage;
             }
 
             // Print results here
-            std::cout << sample << "\t" << gene << "\t" << callValue << "\t" << dosage << "\t" << probKnockout << "\t" << totalMapped << "/" << totalVariants << "\t";  
-            
-            // If you have infoMap available
+            std::cout << sample << "\t" << gene << "\t" << callValue << "\t" << dosage << "\t" << geneScore << "\t";
+
             if (!pathInfoMap.empty())
             {
+
                 // For Haplotype 1 variants
-                for (const auto &variant : haplotype1Variants)
-                {
-                    std::pair<std::string, std::string> key = std::make_pair(variant, gene);
-                    std::string info = (infoMap.find(key) != infoMap.end()) ? infoMap[key] : "NA";
-                    std::cout << ";" << variant << ":" << info; 
+                if (!haplotype1Variants.empty()) {
+                    for (auto it = haplotype1Variants.begin(); it != haplotype1Variants.end(); ++it) {
+                        std::pair<std::string, std::string> key = std::make_pair(*it, gene);
+                        std::string info = (infoMap.find(key) != infoMap.end()) ? infoMap[key] : "NA";
+                        std::cout << *it << ":" << info;
+                        if (std::next(it) != haplotype1Variants.end()) {
+                            std::cout << ";";
+                        }
+                    }
                 }
 
+                // delinetiate by phase
+                std::cout << "|";
+
                 // For Haplotype 2 variants
-                for (const auto &variant : haplotype2Variants)
-                {
-                    std::pair<std::string, std::string> key = std::make_pair(variant, gene);
-                    std::string info = (infoMap.find(key) != infoMap.end()) ? infoMap[key] : "NA";
-                    std::cout << ";" << variant << ":" << info; 
+                if (!haplotype2Variants.empty()) {
+                    for (auto it = haplotype2Variants.begin(); it != haplotype2Variants.end(); ++it) {
+                        std::pair<std::string, std::string> key = std::make_pair(*it, gene);
+                        std::string info = (infoMap.find(key) != infoMap.end()) ? infoMap[key] : "NA";
+                        std::cout << *it << ":" << info;
+                        if (std::next(it) != haplotype2Variants.end()) {
+                            std::cout << ";";
+                        }
+                    }
                 }
+
             }
+
 
             std::cout << std::endl;
         }
@@ -420,3 +454,4 @@ int main(int argc, char *argv[])
 
     return 0;
 }
+
