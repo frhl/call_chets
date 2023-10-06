@@ -36,17 +36,18 @@ void printUsage(const char *path)
 
     std::cerr << "\nInput:" << std::endl;
     std::cerr << "  --geno/-g <Genotype File>   : Required. A gzipped file containing alternate genotype data." << std::endl;
-    std::cerr << "                              The file should have sample id, variant id, and genotype separated by whitespace." << std::endl;
-    std::cerr << "                              Each line might look like the following: 'Sample1 chr21:12314:C:T 1|0'." << std::endl;
+    std::cerr << "                                The file should have sample id, variant id, and genotype separated by whitespace." << std::endl;
+    std::cerr << "                                Each line might look like the following: 'Sample1 chr21:12314:C:T 1|0'." << std::endl;
     std::cerr << "  --gene-map/-m <Map File>    : Required. File mapping variants to genes. It should contain at least" << std::endl;
-    std::cerr << "                              two columns with a header in the format: variant, gene, info (optional)." << std::endl;
+    std::cerr << "                                two columns with a header in the format: variant, gene, info (optional)." << std::endl;
     std::cerr << "  --info-map/-i               : Optional. File mapping variants to their corresponding information." << std::endl;
-    std::cerr << "                              The file should contain variant, gene, and info columns, mapping each variant to its information." << std::endl;
-    std::cerr << "  --score-map/-p             : Optional. File mapping variants to their score information." << std::endl;
-    std::cerr << "                              The file should contain variant, gene, and score columns." << std::endl;
+    std::cerr << "                                The file should contain variant, gene, and info columns, mapping each variant to its information." << std::endl;
+    std::cerr << "  --score-map/-p              : Optional. File mapping variants to their score information." << std::endl;
+    std::cerr << "                                The file should contain variant, gene, and score columns." << std::endl;
     std::cerr << "  --haplotype-collapse/-c     : Optional. Specifies the rule for combining variant dosages within a haplotype." << std::endl;
-    std::cerr << "                              Options are 'multiplicative', 'burden' or 'max'. Default is 'multiplicative'." << std::endl;
-    std::cerr << "  --verbose/-v                : Optional. Print out more information" << std::endl;
+    std::cerr << "                                Options are 'multiplicative', 'burden' or 'max'. Default is 'multiplicative'." << std::endl;
+    std::cerr << "  --show-variants             : Optional. Print variants involved in encoding as an extra column." << std::endl;
+    std::cerr << "  --debug                     : Optional. Print out more information during run" << std::endl;
 
     std::cerr << "\nOutput Format:" << std::endl;
     std::cerr << "  The output will be printed to the console with the following columns:" << std::endl;
@@ -66,6 +67,7 @@ int main(int argc, char *argv[])
     std::string pathInfoMap;
     std::string pathScoreMap;
     std::string haplotypeCollapseRule = "multiplicative";
+    bool showVariants = false;
     bool verbose = false;
 
     for (int i = 1; i < argc; ++i)
@@ -102,7 +104,11 @@ int main(int argc, char *argv[])
                 return 1;
             }
         }
-        else if (arg == "--verbose" || arg == "-v")
+        else if (arg == "--show-variants")
+        {
+            showVariants = true;
+        }
+        else if (arg == "--debug")
         {
             verbose = true;
         }
@@ -281,8 +287,6 @@ int main(int argc, char *argv[])
         std::cerr << "Variants in mapping file (kept): " << uniqueVariantsKept.size() << std::endl;
         std::cerr << "Variants not in mapping file (Discarded): " << uniqueVariantsDiscarded.size() << std::endl;
         std::cerr << "Variants mapping to more than one gene: " << multiGeneVariants.size() << std::endl;
-        std::cerr << "* Generating sample-gene-variant file.." << std::endl;
-        std::cerr << "* Generating output.." << std::endl;
     }
 
     // Print results
@@ -343,7 +347,7 @@ int main(int argc, char *argv[])
             float geneScore = 0.0f;
 
             // calculate probability of knockout for each haplotype
-            if (!pathScoreMap.empty() && (callValue == "hom" || callValue == "chet"))
+            if (!pathScoreMap.empty())
             {
 
                 float haplotype1Score = 1.0f;
@@ -415,44 +419,89 @@ int main(int argc, char *argv[])
             // Print results here
             std::cout << sample << "\t" << gene << "\t" << callValue << "\t" << dosage << "\t" << geneScore << "\t";
 
-            if (!pathInfoMap.empty())
+            // allow user to show variants even if info file is not specified
+            if (showVariants && pathInfoMap.empty())
             {
 
                 // For Haplotype 1 variants
-                if (!haplotype1Variants.empty()) {
-                    for (auto it = haplotype1Variants.begin(); it != haplotype1Variants.end(); ++it) {
-                        std::pair<std::string, std::string> key = std::make_pair(*it, gene);
-                        std::string info = (infoMap.find(key) != infoMap.end()) ? infoMap[key] : "NA";
-                        std::cout << *it << ":" << info;
-                        if (std::next(it) != haplotype1Variants.end()) {
+                if (!haplotype1Variants.empty())
+                {
+                    for (auto it = haplotype1Variants.begin(); it != haplotype1Variants.end(); ++it)
+                    {
+                        std::cout << *it;
+                        if (std::next(it) != haplotype1Variants.end())
+                        {
                             std::cout << ";";
                         }
                     }
                 }
 
                 // delinetiate by phase
-                std::cout << "|";
+                if (haplotype1Variants.size() > 1 && haplotype2Variants.size() > 1)
+                {
+                    std::cout << "|";
+                }
 
                 // For Haplotype 2 variants
-                if (!haplotype2Variants.empty()) {
-                    for (auto it = haplotype2Variants.begin(); it != haplotype2Variants.end(); ++it) {
-                        std::pair<std::string, std::string> key = std::make_pair(*it, gene);
-                        std::string info = (infoMap.find(key) != infoMap.end()) ? infoMap[key] : "NA";
-                        std::cout << *it << ":" << info;
-                        if (std::next(it) != haplotype2Variants.end()) {
+                if (!haplotype2Variants.empty())
+                {
+                    for (auto it = haplotype2Variants.begin(); it != haplotype2Variants.end(); ++it)
+                    {
+                        std::cout << *it;
+                        if (std::next(it) != haplotype2Variants.end())
+                        {
                             std::cout << ";";
+                        }
+                    }
+                }
+            }
+
+            if (!pathInfoMap.empty())
+            {
+                {
+
+                    // For Haplotype 1 variants
+                    if (!haplotype1Variants.empty())
+                    {
+                        for (auto it = haplotype1Variants.begin(); it != haplotype1Variants.end(); ++it)
+                        {
+                            std::pair<std::string, std::string> key = std::make_pair(*it, gene);
+                            std::string info = (infoMap.find(key) != infoMap.end()) ? infoMap[key] : "NA";
+                            std::cout << *it << ":" << info;
+                            if (std::next(it) != haplotype1Variants.end())
+                            {
+                                std::cout << ";";
+                            }
+                        }
+                    }
+
+                    // delinetiate by phase
+                    if (haplotype1Variants.size() > 1 && haplotype2Variants.size() > 1)
+                    {
+                        std::cout << "|";
+                    }
+
+                    // For Haplotype 2 variants
+                    if (!haplotype2Variants.empty())
+                    {
+                        for (auto it = haplotype2Variants.begin(); it != haplotype2Variants.end(); ++it)
+                        {
+                            std::pair<std::string, std::string> key = std::make_pair(*it, gene);
+                            std::string info = (infoMap.find(key) != infoMap.end()) ? infoMap[key] : "NA";
+                            std::cout << *it << ":" << info;
+                            if (std::next(it) != haplotype2Variants.end())
+                            {
+                                std::cout << ";";
+                            }
                         }
                     }
                 }
 
             }
 
-
             std::cout << std::endl;
         }
     }
-
     return 0;
 }
-
 
