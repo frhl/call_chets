@@ -108,6 +108,12 @@ int main(int argc, char *argv[])
                 printUsage(argv[0]);
                 return 1;
             }
+            if (haplotypeCollapseRule != "product")
+            {
+                std::cerr << "Error! Haplotype-collapse rule not yet implemented: " << haplotypeCollapseRule << ". Please use 'product' for now." << std::endl;
+                printUsage(argv[0]);
+                return 1;
+            }
         }
         else if ((arg == "--gene-collapse" || arg == "-gc") && i + 1 < argc)
         {
@@ -118,6 +124,7 @@ int main(int argc, char *argv[])
                 printUsage(argv[0]);
                 return 1;
             }
+            
         }
         else if (arg == "--show-haplotype-score")
         {
@@ -464,7 +471,7 @@ int main(int argc, char *argv[])
                 std::cout << "\tg=" << geneCollapseRule << "\t" << geneScore;
                 if (showHaplotypeScore)
                 {
-                    std::cout << "\th="  << haplotypeCollapseRule << "\t" << haplotype1Score << "\t" << haplotype2Score;
+                    std::cout << "\th=" << haplotypeCollapseRule << "\t" << haplotype1Score << "\t" << haplotype2Score;
                 }
             }
 
@@ -489,7 +496,7 @@ int main(int argc, char *argv[])
 
                 if (!haplotype1Variants.empty() && !haplotype2Variants.empty())
                 {
-                std::cout << "|";
+                    std::cout << "|";
                 }
 
                 // For Haplotype 2 variants
@@ -529,7 +536,7 @@ int main(int argc, char *argv[])
 
                     if (!haplotype1Variants.empty() && !haplotype2Variants.empty())
                     {
-                    std::cout << "|";
+                        std::cout << "|";
                     }
 
                     // For Haplotype 2 variants
