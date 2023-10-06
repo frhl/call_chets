@@ -53,7 +53,7 @@ void printUsage(const char *path)
     std::cerr << "  --gene-collapse/-gc         : Optional. Specifies the rule for combining resulting variant scores across" << std::endl;
     std::cerr << "                                haplotypes. The options are 'additive', 'product','min' or 'max'. The" << std::endl;
     std::cerr << "                                default is 'product'." << std::endl;
-    std::cerr << "  --show-haplotype-score/-shs : Optional. Prints the haplotype-specific scores (when '-c' is specified)." << std::endl;
+    std::cerr << "  --show-haplotype-scores/-shs: Optional. Prints the haplotype-specific scores (when '-c' is specified)." << std::endl;
     std::cerr << "  --show-variants/-s          : Optional. Print variants involved in encoding as an extra column." << std::endl;
     std::cerr << "  --debug                     : Optional. Print out more information during run" << std::endl;
 
@@ -129,7 +129,7 @@ int main(int argc, char *argv[])
             }
             
         }
-        else if (arg == "--show-haplotype-score" || arg == "-shs")
+        else if (arg == "--show-haplotype-scores" || arg == "-shs")
         {
             showHaplotypeScore = true;
         }
