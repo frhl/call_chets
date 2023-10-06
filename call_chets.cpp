@@ -337,9 +337,17 @@ int main(int argc, char *argv[])
         {
             const std::string &gene = genePair.first;
             const auto &haplotypeVariantMap = genePair.second;
+            std::string chromosome;
 
             std::set<std::string> haplotype1Variants = haplotypeVariantMap.count(1) ? std::set<std::string>(haplotypeVariantMap.at(1).begin(), haplotypeVariantMap.at(1).end()) : std::set<std::string>();
             std::set<std::string> haplotype2Variants = haplotypeVariantMap.count(2) ? std::set<std::string>(haplotypeVariantMap.at(2).begin(), haplotypeVariantMap.at(2).end()) : std::set<std::string>();
+
+            // extract chromosome from string
+            std::set<std::string> mergedVariants;
+            std::set_union(haplotype1Variants.begin(), haplotype1Variants.end(), haplotype2Variants.begin(), haplotype2Variants.end(), std::inserter(mergedVariants, mergedVariants.begin()));
+            const std::string& variant = *mergedVariants.begin(); // taking the first variant
+            std::stringstream ss(variant);
+            std::getline(ss, chromosome, ':'); // extracting chromosome part
 
             std::string callValue;
             int dosage = 0;
@@ -383,7 +391,7 @@ int main(int argc, char *argv[])
             }
 
             // print the basic information
-            std::cout << sample << "\t" << gene << "\t" << callValue << "\t" << dosage;
+            std::cout << sample << "\t" << chromosome << "\t" << gene << "\t" << callValue << "\t" << dosage;
 
             int totalMapped = 0;
             int totalVariants = 0;
