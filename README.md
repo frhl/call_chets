@@ -63,7 +63,7 @@ We can also take a look at cis (`| grep cis`) variants,  add the `--show-haploty
 5830593	chr21	ENSG00000142185	cis	1	g=product	0	h=product	0	0.896241	chr21:44414064:G:T:missense_variant;chr21:44425816:G:A:missense_variant
 ```
 
-Two variants are found here (See below). The combined probability of haplotype knockout is defined as probability of haplotype knockout is `P(hap_ko)=1-((1-0.6391)*(1-0.7125))`. If more variants are specified, these will also be included in the calculation. Other calculations (burden/min/max) can be invoked with the `--haplotype-collapse/-hc` and `--gene-collapse/-gc` arguments.
+Two variants are found here (See below). We define the probability of haplotype knockout is defined as probability of haplotype knockout is `P(hap_ko)=1-((1-0.6391)*(1-0.7125))=0.896241`. If more variants are specified, these will also be included in the calculation. Other calculations (burden/min/max) can be invoked with the `--haplotype-collapse/-hc` and `--gene-collapse/-gc` arguments.
 
 ```
 variant gene p(deleterious)
