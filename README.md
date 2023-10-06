@@ -69,7 +69,7 @@ Two variants are found here (See below). The combined probability of haplotype k
 variant gene p(deleterious)
 chr21:44414064:G:T	ENSG00000142185	0.6391
 chr21:44425816:G:A	ENSG00000142185	0.7125
-``
+```
 
 
 ### Step 3: Create VCF
