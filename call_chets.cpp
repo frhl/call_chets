@@ -44,8 +44,12 @@ void printUsage(const char *path)
     std::cerr << "                                The file should contain variant, gene, and info columns, mapping each variant to its information." << std::endl;
     std::cerr << "  --score-map/-p              : Optional. File mapping variants to their score information." << std::endl;
     std::cerr << "                                The file should contain variant, gene, and score columns." << std::endl;
-    std::cerr << "  --haplotype-collapse/-c     : Optional. Specifies the rule for combining variant dosages within a haplotype." << std::endl;
-    std::cerr << "                                Options are 'multiplicative', 'burden' or 'max'. Default is 'multiplicative'." << std::endl;
+    std::cerr << "  --haplotype-collapse/-hc     : Optional. Specifies the rule for combining variant dosages within a haplotype." << std::endl;
+    std::cerr << "                                Options are 'product', 'additive', 'mim' or 'max'. Default is 'product'." << std::endl;
+    std::cerr << "  --gene-collapse/-gc         : Optional. Specifies the rule for combining resulting variant scores across" << std::endl;
+    std::cerr << "                                haplotypes. The options are 'additive', 'product','min' or 'max'. The" << std::endl;
+    std::cerr << "                                default is 'product'." << std::endl;
+    std::cerr << "  --show-haplotype-score      : Optional. Prints the hapotype-specific score (when '-c' is specified)." << std::endl;
     std::cerr << "  --show-variants             : Optional. Print variants involved in encoding as an extra column." << std::endl;
     std::cerr << "  --debug                     : Optional. Print out more information during run" << std::endl;
 
@@ -56,7 +60,6 @@ void printUsage(const char *path)
     std::cerr << "\nNotes:" << std::endl;
     std::cerr << "  Ensure that the --geno file is appropriately formatted (optionally gzipped)." << std::endl;
     std::cerr << "  The program will attempt to match variants between the --gene-map and --geno file, discarding those that do not match." << std::endl;
-    std::cerr << "  See the README for more detailed information on how to prepare input files and interpret the output." << std::endl;
 }
 
 int main(int argc, char *argv[])
@@ -66,8 +69,10 @@ int main(int argc, char *argv[])
     std::string pathMap;
     std::string pathInfoMap;
     std::string pathScoreMap;
-    std::string haplotypeCollapseRule = "multiplicative";
+    std::string haplotypeCollapseRule = "product";
+    std::string geneCollapseRule = "product";
     bool showVariants = false;
+    bool showHaplotypeScore = false;
     bool verbose = false;
 
     for (int i = 1; i < argc; ++i)
@@ -94,15 +99,29 @@ int main(int argc, char *argv[])
         {
             pathScoreMap = argv[++i];
         }
-        else if ((arg == "--haplotype-collapse" || arg == "-c") && i + 1 < argc)
+        else if ((arg == "--haplotype-collapse" || arg == "-hc") && i + 1 < argc)
         {
             haplotypeCollapseRule = argv[++i];
-            if (haplotypeCollapseRule != "multiplicative" && haplotypeCollapseRule != "burden" && haplotypeCollapseRule != "max")
+            if (haplotypeCollapseRule != "product" && haplotypeCollapseRule != "additive" && haplotypeCollapseRule != "max" && haplotypeCollapseRule != "min")
             {
-                std::cerr << "Error! Invalid haplotype-collapse: " << haplotypeCollapseRule << std::endl;
+                std::cerr << "Error! Invalid haplotype-collapse rule: " << haplotypeCollapseRule << std::endl;
                 printUsage(argv[0]);
                 return 1;
             }
+        }
+        else if ((arg == "--gene-collapse" || arg == "-gc") && i + 1 < argc)
+        {
+            geneCollapseRule = argv[++i];
+            if (geneCollapseRule != "product" && geneCollapseRule != "additive" && geneCollapseRule != "max" && geneCollapseRule != "min")
+            {
+                std::cerr << "Error! Invalid gene-collapse rule: " << geneCollapseRule << std::endl;
+                printUsage(argv[0]);
+                return 1;
+            }
+        }
+        else if (arg == "--show-haplotype-score")
+        {
+            showHaplotypeScore = true;
         }
         else if (arg == "--show-variants")
         {
@@ -342,6 +361,9 @@ int main(int argc, char *argv[])
                 dosage = 0;
             }
 
+            // print the basic information
+            std::cout << sample << "\t" << gene << "\t" << callValue << "\t" << dosage;
+
             int totalMapped = 0;
             int totalVariants = 0;
             float geneScore = 0.0f;
@@ -366,7 +388,7 @@ int main(int argc, char *argv[])
                     float mappedScore = (it != variantGeneScore.end()) ? it->second : 1.0f; // default to 1.0 if not found
                     if (mappedScore != 1.0f)
                         counthaplotype1ScoreMapped++;
-                    if (haplotypeCollapseRule == "multiplicative")
+                    if (haplotypeCollapseRule == "product")
                     {
                         haplotype1Score *= (1 - mappedScore);
                     }
@@ -374,7 +396,11 @@ int main(int argc, char *argv[])
                     {
                         haplotype1Score = std::max(haplotype1Score, mappedScore);
                     }
-                    else // burden
+                    else if (haplotypeCollapseRule == "min")
+                    {
+                        haplotype1Score = std::min(haplotype1Score, mappedScore);
+                    }
+                    else if (haplotypeCollapseRule == "additive")
                     {
                         haplotype1Score += mappedScore;
                     }
@@ -387,7 +413,7 @@ int main(int argc, char *argv[])
                     float mappedScore = (it != variantGeneScore.end()) ? it->second : 1.0f; // default to 1.0 if not found
                     if (mappedScore != 1.0f)
                         counthaplotype2ScoreMapped++;
-                    if (haplotypeCollapseRule == "multiplicative")
+                    if (haplotypeCollapseRule == "product")
                     {
                         haplotype2Score *= (1 - mappedScore);
                     }
@@ -395,14 +421,18 @@ int main(int argc, char *argv[])
                     {
                         haplotype2Score = std::max(haplotype2Score, mappedScore);
                     }
-                    else // burden
+                    else if (haplotypeCollapseRule == "min")
+                    {
+                        haplotype2Score = std::min(haplotype2Score, mappedScore);
+                    }
+                    else if (haplotypeCollapseRule == "additive")
                     {
                         haplotype2Score += mappedScore;
                     }
                 }
 
                 // 1 minus the haplotype score is the probability of knockout for each haplotype
-                if (haplotypeCollapseRule == "multiplicative")
+                if (haplotypeCollapseRule == "product")
                 {
                     haplotype2Score = 1 - haplotype2Score;
                     haplotype1Score = 1 - haplotype1Score;
@@ -412,16 +442,37 @@ int main(int argc, char *argv[])
                 totalMapped = counthaplotype1ScoreMapped + counthaplotype2ScoreMapped;
                 totalVariants = totalHaplotype1Variants + totalHaplotype2Variants;
 
-                // compute final score that is the product of the two haplotypes
-                geneScore = haplotype1Score * haplotype2Score;
-            }
+                // compute final score that depending on gene collapse rules
+                if (geneCollapseRule == "product")
+                {
+                    geneScore = haplotype1Score * haplotype2Score;
+                }
+                else if (geneCollapseRule == "max")
+                {
+                    geneScore = std::max(haplotype1Score, haplotype2Score);
+                }
+                else if (geneCollapseRule == "min")
+                {
+                    geneScore = std::min(haplotype1Score, haplotype2Score);
+                }
+                else if (geneCollapseRule == "additive")
+                {
+                    geneScore = haplotype1Score + haplotype2Score;
+                }
 
-            // Print results here
-            std::cout << sample << "\t" << gene << "\t" << callValue << "\t" << dosage << "\t" << geneScore << "\t";
+                // Print results here
+                std::cout << "\tg=" << geneCollapseRule << "\t" << geneScore;
+                if (showHaplotypeScore)
+                {
+                    std::cout << "\th="  << haplotypeCollapseRule << "\t" << haplotype1Score << "\t" << haplotype2Score;
+                }
+            }
 
             // allow user to show variants even if info file is not specified
             if (showVariants && pathInfoMap.empty())
             {
+
+                std::cout << "\t";
 
                 // For Haplotype 1 variants
                 if (!haplotype1Variants.empty())
@@ -436,10 +487,9 @@ int main(int argc, char *argv[])
                     }
                 }
 
-                // delinetiate by phase
-                if (haplotype1Variants.size() > 1 && haplotype2Variants.size() > 1)
+                if (!haplotype1Variants.empty() && !haplotype2Variants.empty())
                 {
-                    std::cout << "|";
+                std::cout << "|";
                 }
 
                 // For Haplotype 2 variants
@@ -460,6 +510,8 @@ int main(int argc, char *argv[])
             {
                 {
 
+                    std::cout << "\t";
+
                     // For Haplotype 1 variants
                     if (!haplotype1Variants.empty())
                     {
@@ -475,10 +527,9 @@ int main(int argc, char *argv[])
                         }
                     }
 
-                    // delinetiate by phase
-                    if (haplotype1Variants.size() > 1 && haplotype2Variants.size() > 1)
+                    if (!haplotype1Variants.empty() && !haplotype2Variants.empty())
                     {
-                        std::cout << "|";
+                    std::cout << "|";
                     }
 
                     // For Haplotype 2 variants
@@ -496,7 +547,6 @@ int main(int argc, char *argv[])
                         }
                     }
                 }
-
             }
 
             std::cout << std::endl;
