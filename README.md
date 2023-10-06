@@ -1,6 +1,7 @@
 # Call compound heterozygous and homozygous sites by genes using phased genotypes
 This repository contains C++ scripts tailored for analyses with phased data, specifically involving variant call format (VCF) files.
 
+
 ## Installation
 1. Ensure you have the necessary cpp libraries. Check the provided `Dockerfile` for the complete list.
 2. Install [BCFtools](https://samtools.github.io/bcftools/howtos/install.html).
@@ -38,29 +39,52 @@ For additional output information, provide a mapping file with variant, gene, an
    --info-map info_map.txt  > test/trio.result.txt
 ```
 
-Incorporate prior scores of pathogenicity and model the probability of complete knockout using the `--score-map`. Adjust the `--haplotype-collapse argument` to specify handling of variants on each haplotype (options: `multiplicative` (default), `burden`, or `max`). The process returns a score equivalent to the probability of both haplotypes being affected:
+Incorporate prior scores of pathogenicity and model the probability of complete knockout using the `--score-map`. Adjust the `--haplotype-collapse argument` to specify handling of variants on each haplotype (options: `product` (default), `burden`, or `max`). The process returns a score equivalent to the probability of both haplotypes being affected:
 
 ```
 ./call_chets \
    --geno trio.phased_sites.txt.gz \
    --gene-map gene_map.txt \
    --score-map score_map.txt \
-   --haplotype-collapse 'multiplicative' \
-   --verbose | head   
+   --info-map info_map.txt \
+   --haplotype-collapse 'product' \
+   --verbose | head
 ```
 
 
-This is an example on output when all these arguments are specified and `| grep chet`. Sample, gene, configuration, dosage, probability of knockout based on alpha missense score and variant configuration (phase seperated by '|'):
+This is an example on output when all these arguments are specified and `| grep chet`. Sample, gene, configuration, dosage, probability of knockout based on alpha missense score and variant configuration (phase seperated by '|'). Here we have the sample, chromosome, gene id, variant configuration, gene collapsing rule, gene collapse score (here, probability of knockout of both haplotypes), and variants involved (seperated by "|" to indicate phase):
 ```
-sample1 ENSG00000142173 chet 2 0.0837 chr21:46126166:G:A:missense_variant|chr21:46126476:T:TGGCCC:intron_variant
-sample2 ENSG00000142207 chet 2 0.1115 chr21:32321952:C:T:splice_region_variant|chr21:32375439:T:G:missense_variant
-sample3 ENSG00000142173 chet 2 0.0180959 chr21:46114063:G:A:missense_variant|chr21:46126166:G:A:missense_variant
+s1	chr21	ENSG00000215455	chet	2	g=product	0.0516	chr21:44539434:T:C:synonymous_variant|chr21:44539742:T:A:missense_variant
+s2	chr21	ENSG00000205726	chet	2	g=product	0.48188	chr21:33829705:G:A:missense_variant|chr21:33875474:C:T:missense_variant
+s3	chr21	ENSG00000215455	chet	2	g=product	1	chr21:44540070:ACAG:A:inframe_deletion|chr21:44539434:T:C:synonymous_variant
+```
+We can also take a look at cis (`| grep cis`) variants,  add the `--show-haplotype-scores` argument and see how the knockout scores are calculated for each haplotype:
+```
+5830593	chr21	ENSG00000142185	cis	1	g=product	0	h=product	0	0.896241	chr21:44414064:G:T:missense_variant;chr21:44425816:G:A:missense_variant
+```
+
+Two variants are found here (See below). The combined probability of haplotype knockout is defined as probability of haplotype knockout is `P(hap_ko)=1-((1-0.6391)*(1-0.7125))`. If more variants are specified, these will also be included in the calculation. Other calculations (burden/min/max) can be invoked with the `--haplotype-collapse/-hc` and `--gene-collapse/-gc` arguments.
 
 ```
+variant gene p(deleterious)
+chr21:44414064:G:T	ENSG00000142185	0.6391
+chr21:44425816:G:A	ENSG00000142185	0.7125
+``
 
 
 ### Step 3: Create VCF
 Convert the results into a VCF file with additive or recessive encoding. Genes with variants on either the paternal or maternal haplotype  will be encoded with a dosage of 1, while genes with variants on both haplotypes will be encoded as a dosage of 2. Use `--mode recessive` to only keep sites with both haplotypes affected.
+```
+./encode_vcf \
+  --input trio.result.txt \
+  --samples test/samples.txt \
+  --mode additive \
+  --min-ac 1 | bgzip > trio.result.vcf.gz
+```
+
+
+## Haplotype and gene collapsing schemes:
+Encode a model with probability of both haplotypes being knocked out:
 ```
 ./encode_vcf \
   --input trio.result.txt \
@@ -75,10 +99,10 @@ Convert the results into a VCF file with additive or recessive encoding. Genes w
 Used with the `--gene-map` argument. Generate a mapping file by running VEP on your variants, then extract variant and gene IDs using a script. Example:
 ```
 Variant Gene
-20:1665:T:C geneA 
-20:1869:A:T geneA 
-20:2041:G:A geneA 
-20:2220:G:A geneA 
+20:1665:T:C geneA
+20:1869:A:T geneA
+20:2041:G:A geneA
+20:2220:G:A geneA
 ```
 
 ### Info mapping file
@@ -91,7 +115,7 @@ chr21:10538680:G:C	ENSG00000274391	splice_acceptor_variant
 chr21:10538734:GGT:G	ENSG00000274391	splice_donor_variant
 ```
 
-### score mapping file 
+### score mapping file
 For the `--score-map argument`. The third column is indexed by variant and gene, with aggregation logic defined by the `--haplotype-collapse` argument:
 ```
 varid	gene_id	am_pathogenicity
@@ -105,7 +129,7 @@ chr21:10541158:A:C	ENSG00000274391	0.0729
 
 
 
-## `run_call_chets.sh`: A wrapper that combines all the above (to be tested with new version)
+## `run_call_chets.sh`: A wrapper that combines all the above (depcrecated at the moment.. to be tested with new version)
 That script combines several tools to a pipeline for CompHet calling. In particular, for a given chromosome:
 1. Calls BCFtools (alternative to `get_non_ref_sites`) to extract non-ref genotypes for a phased BCF.
 2. Then uses `prepare_genemap.py` to prepare gene-variant maps according to each consequence (e.g. pLoF + damaging_missense).
