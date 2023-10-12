@@ -115,7 +115,7 @@ int main(int argc, char *argv[])
                 printUsage(argv[0]);
                 return 1;
             }
-            
+
         }
         else if ((arg == "--gene-collapse" || arg == "-gc") && i + 1 < argc)
         {
@@ -127,7 +127,7 @@ int main(int argc, char *argv[])
                 printUsage(argv[0]);
                 return 1;
             }
-            
+
         }
         else if (arg == "--show-haplotype-scores" || arg == "-shs")
         {
@@ -209,17 +209,39 @@ int main(int argc, char *argv[])
         gzFile infoMapFile = gzopen(pathInfoMap.c_str(), "rb");
         if (!infoMapFile)
         {
-            std::cerr << "Warning: Cannot open --info-map file for reading: " << pathInfoMap << ". Continuing without info data." << std::endl;
+            std::cerr << "Warning: Cannot open --info-map file for reading: " 
+                    << pathInfoMap << ". Continuing without info data." << std::endl;
         }
         else
         {
             char infoBuf[1024];
+            bool isFirstLine = true;
             while (gzgets(infoMapFile, infoBuf, sizeof(infoBuf)))
             {
                 std::stringstream ss(infoBuf);
                 std::string variant, gene, info;
                 ss >> variant >> gene >> info;
-                infoMap[std::make_pair(variant, gene)] = info;
+
+                // Check whether data extraction was successful.
+                if(ss.fail() || ss.bad())
+                {
+                    if(isFirstLine)
+                    {
+                        std::cerr << "Warning: Assuming first line in --info-map is a header and skipping: " 
+                                << infoBuf << std::endl;
+                    }
+                    else
+                    {
+                        std::cerr << "Error: Failed to extract variant, gene, and info from line: " 
+                                << infoBuf << ". Please, fix this line in --info-map and retry." << std::endl;
+                        return 1;
+                    }
+                }
+                else
+                {
+                    infoMap[std::make_pair(variant, gene)] = info;
+                }
+                isFirstLine = false;
             }
             gzclose(infoMapFile);
         }
@@ -232,22 +254,45 @@ int main(int argc, char *argv[])
         gzFile scoreMapFile = gzopen(pathScoreMap.c_str(), "rb");
         if (!scoreMapFile)
         {
-            std::cerr << "Warning: Cannot open --score-map file for reading: " << pathScoreMap << ". Continuing without score data." << std::endl;
+            std::cerr << "Warning: Cannot open --score-map file for reading: " 
+                    << pathScoreMap << ". Continuing without score data." << std::endl;
         }
         else
         {
             char pathoBuf[1024];
+            bool isFirstLine = true;
             while (gzgets(scoreMapFile, pathoBuf, sizeof(pathoBuf)))
             {
                 std::stringstream ss(pathoBuf);
                 std::string variant, gene;
                 float newScore;
                 ss >> variant >> gene >> newScore;
-                variantGeneScore[std::make_pair(variant, gene)] = newScore;
+
+                // Check whether data extraction was successful.
+                if(ss.fail() || ss.bad())
+                {
+                    if(isFirstLine)
+                    {
+                        std::cerr << "Note: Assuming first line in --score-map is a header and skipping: " 
+                                << pathoBuf << std::endl;
+                    }
+                    else
+                    {
+                        std::cerr << "Error: Failed to extract variant, gene, and score from line: " 
+                                << pathoBuf << ". Please, fix this line in --score-map and retry." << std::endl;
+                        return 1;
+                    }
+                }
+                else
+                {
+                    variantGeneScore[std::make_pair(variant, gene)] = newScore;
+                }
+                isFirstLine = false;
             }
             gzclose(scoreMapFile);
         }
     }
+
 
     // Process genotype file
     std::map<std::string, std::map<std::string, std::vector<std::string>>> sampleGeneVariants;
