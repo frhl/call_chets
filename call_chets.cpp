@@ -187,18 +187,36 @@ int main(int argc, char *argv[])
     }
 
     // Mapping variant to gene
-    std::map<std::string, std::vector<std::pair<std::string, std::string>>> variantToGene;
+    std::map<std::string, std::vector<std::string>> variantToGene;
     std::map<std::string, std::map<std::string, double>> variantGeneToPathogenicity;
-    std::string variant, gene, thirdColumn;
+    std::string variant, gene;
     char buf[1024];
 
-    // Read the mapping file
+    bool isFirstLineMappingFile = true;
     while (gzgets(mappingFile, buf, sizeof(buf)))
     {
         std::stringstream ss(buf);
         ss >> variant >> gene;
-        std::pair<std::string, std::string> geneInfo = ss >> thirdColumn ? std::make_pair(gene, thirdColumn) : std::make_pair(gene, "");
-        variantToGene[variant].push_back(geneInfo);
+
+        // Check whether data extraction was successful.
+        if(ss.fail() || variant.empty() || gene.empty())
+        {
+            if(isFirstLineMappingFile)
+            {
+                std::cerr << "Warning: Assuming first line in --gene-map is a header and skipping: " << buf << std::endl;
+            }
+            else
+            {
+                std::cerr << "Error: Failed to extract two columns from line (variant gene): " << buf << ". Please, fix this line in --gene-map and retry." << std::endl;
+                gzclose(mappingFile);
+                return 1;
+            }
+        }
+        else
+        {
+            variantToGene[variant].push_back(gene);
+        }
+        isFirstLineMappingFile = false;
     }
     gzclose(mappingFile);
 
@@ -209,8 +227,7 @@ int main(int argc, char *argv[])
         gzFile infoMapFile = gzopen(pathInfoMap.c_str(), "rb");
         if (!infoMapFile)
         {
-            std::cerr << "Warning: Cannot open --info-map file for reading: " 
-                    << pathInfoMap << ". Continuing without info data." << std::endl;
+            std::cerr << "Warning: Cannot open --info-map file for reading: " << pathInfoMap << ". Continuing without info data." << std::endl;
         }
         else
         {
@@ -227,13 +244,12 @@ int main(int argc, char *argv[])
                 {
                     if(isFirstLine)
                     {
-                        std::cerr << "Warning: Assuming first line in --info-map is a header and skipping: " 
-                                << infoBuf << std::endl;
+                        std::cerr << "Warning: Assuming first line in --info-map is a header and skipping: " << infoBuf << std::endl;
                     }
                     else
                     {
-                        std::cerr << "Error: Failed to extract variant, gene, and info from line: " 
-                                << infoBuf << ". Please, fix this line in --info-map and retry." << std::endl;
+                        std::cerr << "Error: Failed to extract variant, gene, and info from line: " << infoBuf 
+                                  << "Please, fix this line in --info-map and retry." << std::endl;
                         return 1;
                     }
                 }
@@ -254,7 +270,7 @@ int main(int argc, char *argv[])
         gzFile scoreMapFile = gzopen(pathScoreMap.c_str(), "rb");
         if (!scoreMapFile)
         {
-            std::cerr << "Warning: Cannot open --score-map file for reading: " 
+            std::cerr << "Warning: Cannot open --score-map file for reading: "
                     << pathScoreMap << ". Continuing without score data." << std::endl;
         }
         else
@@ -273,12 +289,12 @@ int main(int argc, char *argv[])
                 {
                     if(isFirstLine)
                     {
-                        std::cerr << "Note: Assuming first line in --score-map is a header and skipping: " 
+                        std::cerr << "Note: Assuming first line in --score-map is a header and skipping: "
                                 << pathoBuf << std::endl;
                     }
                     else
                     {
-                        std::cerr << "Error: Failed to extract variant, gene, and score from line: " 
+                        std::cerr << "Error: Failed to extract variant, gene, and score from line: "
                                 << pathoBuf << ". Please, fix this line in --score-map and retry." << std::endl;
                         return 1;
                     }
@@ -321,7 +337,8 @@ int main(int argc, char *argv[])
         // Warn user that skipping is happening
         if (genotype != "1|0" && genotype != "0|1" && genotype != "1|1")
         {
-            std::cerr << "Warning: Skipping unexpected genotype value (" << genotype << ") in sample " << sample << " for variant " << variant << "." << std::endl;
+            std::cerr << "Warning: Skipping unexpected genotype value (" << genotype << ") in sample "
+                      << sample << " for variant " << variant << ". Expecting columns: sample variant genotype." << std::endl;
             continue;
         }
 
@@ -334,7 +351,7 @@ int main(int argc, char *argv[])
 
             for (const auto &geneInfoPair : variantToGene[variant])
             {
-                std::string gene = geneInfoPair.first;
+                std::string gene = geneInfoPair;
                 uniqueVariantsKept.insert(variant);
 
                 // save haplotype
