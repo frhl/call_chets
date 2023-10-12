@@ -201,11 +201,7 @@ int main(int argc, char *argv[])
         // Check whether data extraction was successful.
         if(ss.fail() || variant.empty() || gene.empty())
         {
-            if(isFirstLineMappingFile)
-            {
-                std::cerr << "Warning: Assuming first line in --gene-map is a header and skipping: " << buf << std::endl;
-            }
-            else
+            if(!isFirstLineMappingFile)
             {
                 std::cerr << "Error: Failed to extract two columns from line (variant gene): " << buf << ". Please, fix this line in --gene-map and retry." << std::endl;
                 gzclose(mappingFile);
@@ -242,11 +238,7 @@ int main(int argc, char *argv[])
                 // Check whether data extraction was successful.
                 if(ss.fail() || ss.bad())
                 {
-                    if(isFirstLine)
-                    {
-                        std::cerr << "Warning: Assuming first line in --info-map is a header and skipping: " << infoBuf << std::endl;
-                    }
-                    else
+                    if(!isFirstLine)
                     {
                         std::cerr << "Error: Failed to extract variant, gene, and info from line: " << infoBuf 
                                   << "Please, fix this line in --info-map and retry." << std::endl;
@@ -287,12 +279,7 @@ int main(int argc, char *argv[])
                 // Check whether data extraction was successful.
                 if(ss.fail() || ss.bad())
                 {
-                    if(isFirstLine)
-                    {
-                        std::cerr << "Note: Assuming first line in --score-map is a header and skipping: "
-                                << pathoBuf << std::endl;
-                    }
-                    else
+                    if(!isFirstLine)
                     {
                         std::cerr << "Error: Failed to extract variant, gene, and score from line: "
                                 << pathoBuf << ". Please, fix this line in --score-map and retry." << std::endl;
