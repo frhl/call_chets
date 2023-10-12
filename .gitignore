@@ -1,5 +1,6 @@
 playground/
 variant_to_gene/
+testhat/
 *.txt
 *.gz
 *.o
