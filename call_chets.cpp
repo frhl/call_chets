@@ -45,14 +45,16 @@ void printUsage(const char *path)
     std::cerr << "                                to infomation provided. The file must contain variant, gene, and info columns." << std::endl;
     std::cerr << "  --score-map/-p              : Optional. File mapping variants to their score information." << std::endl;
     std::cerr << "                                The file should contain variant, gene, and score columns." << std::endl;
-    std::cerr << "  --haplotype-collapse/-hc     : Optional. Specifies the rule for combining variant dosages within a haplotype." << std::endl;
+    std::cerr << "  --haplotype-collapse/-hc    : Optional. Specifies the rule for combining variant dosages within a single" << std::endl;
+    std::cerr << "                              : haplotype. This is only relevant when +1 variants are present on the haplotype." << std::endl;
     std::cerr << "                                Options are 'product', 'additive', 'min' or 'max'. Please, note that" << std::endl;
     std::cerr << "                                when 'product' is chosen the results is P(affected) by determining  " << std::endl;
     std::cerr << "                                P(affected) = 1-((1-P1_score)*(1-P2_score) .. * (1-Pn_score)) for n variants" << std::endl;
     std::cerr << "                                across that haplotype. Default value 'product'. " << std::endl;
     std::cerr << "  --gene-collapse/-gc         : Optional. Specifies the rule for combining resulting variant scores across" << std::endl;
     std::cerr << "                                haplotypes. The options are 'additive', 'product','min' or 'max'. The" << std::endl;
-    std::cerr << "                                default is 'product'." << std::endl;
+    std::cerr << "                                default is 'product' which corresponds to a recessive encoding whereas." << std::endl;
+    std::cerr << "                                'additive' correspond to dominance encoding." << std::endl;
     std::cerr << "  --show-haplotype-scores/-shs: Optional. Prints the haplotype-specific scores (when '-c' is specified)." << std::endl;
     std::cerr << "  --show-variants/-s          : Optional. Print variants involved in encoding as an extra column." << std::endl;
     std::cerr << "  --debug                     : Optional. Print out more information during run" << std::endl;
