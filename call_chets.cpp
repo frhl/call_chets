@@ -181,9 +181,9 @@ int main(int argc, char *argv[])
     if (pathScoreMap.empty() && showHaplotypeScore){
         std::cerr << "Warning: ignored --show-haplotype-score argument. This can only be used when --score-map is also specified!" << std::endl;
     }
-    if (pathScoreMap.empty() && geneCollapseRuleSet){
-        std::cerr << "Warning: ignored --gene-collapse argument. This can only be used when --score-map is also specified!" << std::endl;
-    }
+    // if (pathScoreMap.empty() && geneCollapseRuleSet)#{
+    //    std::cerr << "Warning: ignored --gene-collapse argument. This can only be used when --score-map is also specified!" << std::endl;
+    //}
     if (pathScoreMap.empty() && haplotypeCollapseRuleSet){
         std::cerr << "Warning: ignored --haplotype-collapse argument. This can only be used when --score-map is also specified!" << std::endl;
     }
