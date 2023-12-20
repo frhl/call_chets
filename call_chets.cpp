@@ -53,8 +53,7 @@ void printUsage(const char *path)
     std::cerr << "                                across that haplotype. Default value 'product'. " << std::endl;
     std::cerr << "  --gene-collapse/-gc         : Optional. Specifies the rule for combining resulting variant scores across" << std::endl;
     std::cerr << "                                haplotypes. The options are 'additive', 'product','min' or 'max'. The" << std::endl;
-    std::cerr << "                                default is 'product' which corresponds to a recessive encoding whereas." << std::endl;
-    std::cerr << "                                'additive' correspond to dominance encoding." << std::endl;
+    std::cerr << "                                default is 'product'. This argument is only relevant when --score-map is defined." << std::endl;
     std::cerr << "  --show-haplotype-scores/-shs: Optional. Prints the haplotype-specific scores (when '-c' is specified)." << std::endl;
     std::cerr << "  --show-variants/-s          : Optional. Print variants involved in encoding as an extra column." << std::endl;
     std::cerr << "  --debug                     : Optional. Print out more information during run" << std::endl;
@@ -181,9 +180,9 @@ int main(int argc, char *argv[])
     if (pathScoreMap.empty() && showHaplotypeScore){
         std::cerr << "Warning: ignored --show-haplotype-score argument. This can only be used when --score-map is also specified!" << std::endl;
     }
-    // if (pathScoreMap.empty() && geneCollapseRuleSet)#{
-    //    std::cerr << "Warning: ignored --gene-collapse argument. This can only be used when --score-map is also specified!" << std::endl;
-    //}
+    if (pathScoreMap.empty() && geneCollapseRuleSet){
+        std::cerr << "Warning: ignored --gene-collapse argument. This can only be used when --score-map is also specified!" << std::endl;
+    }
     if (pathScoreMap.empty() && haplotypeCollapseRuleSet){
         std::cerr << "Warning: ignored --haplotype-collapse argument. This can only be used when --score-map is also specified!" << std::endl;
     }
