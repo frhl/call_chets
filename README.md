@@ -1,6 +1,5 @@
-# Call compound heterozygous and homozygous and encode psuedo variants for downstream testing.
+# Call compound heterozygous variants
 This repository contains C++ scripts tailored for analyses with phased data, specifically involving variant call format (VCF) files.
-
 
 ## Installation
 1. Ensure you have the necessary cpp libraries. Check the provided `Dockerfile` for the complete list.
