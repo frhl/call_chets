@@ -1,4 +1,4 @@
-# Call compound heterozygous and homozygous sites by genes using phased genotypes
+# Call compound heterozygous and homozygous and encode psuedo variants for downstream testing.
 This repository contains C++ scripts tailored for analyses with phased data, specifically involving variant call format (VCF) files.
 
 
@@ -13,7 +13,7 @@ make
 ## Usage
 
 ### Step 1: Create a Phased Sites File
-Generate a file containing phased sites per gene for each sample. Filter to allele frequency less than 1% using BCFtools.
+Generate a file containing phased sites per gene for each sample. First, filter to allele frequency less than 1% using BCFtools. Since a line will be produced for each variant-sample pair a lower MAF threshold will result in a smaller file.
 
 ```
 bcftools view trio.vcf --max-af 0.01 -Ou | bcftools query -i'GT="alt"' -f'[%SAMPLE %CHROM:%POS:%REF:%ALT %GT\n]' | gzip > trio.phased_sites.txt.gz
@@ -21,7 +21,7 @@ bcftools view trio.vcf --max-af 0.01 -Ou | bcftools query -i'GT="alt"' -f'[%SAMP
 
 
 ### Step 2: Call bi/mono allelic variants
-Call compound heterozygous and other variant types per group (e.g., genes). Repeat this step as needed based on the `--gene-map` argument:
+Call compound heterozygous and other variant types per group (e.g., genes). Repeat this step as needed based on the `--gene-map` argument. Note, that the --gene-map refers to a file with two columns for the variant IDs (preferably CHR:POS:REF:ALT) and the gene id (ensembl gene id).
 
 ```
 ./call_chets \
@@ -30,7 +30,7 @@ Call compound heterozygous and other variant types per group (e.g., genes). Repe
    --gene-map gene_map.txt > test/trio.result.txt
 ```
 
-For additional output information, provide a mapping file with variant, gene, and info columns for the `--info-map` argument. This approach adds an extra column to the output, displaying the info in a phase-aware manner:
+For additional output information, provide a mapping file with variant, gene, and info columns for the `--info-map` argument. This approach adds an extra column to the output, displaying the info in a phase-aware manner. Info map contains three columns, variant, gene id and info string.
 
 ```
 ./call_chets \
@@ -38,6 +38,7 @@ For additional output information, provide a mapping file with variant, gene, an
    --gene-map gene_map.txt \
    --info-map info_map.txt  > test/trio.result.txt
 ```
+
 
 Incorporate prior scores of pathogenicity and model the probability of complete knockout using the `--score-map`. Adjust the `--haplotype-collapse argument` to specify handling of variants on each haplotype (options: `product` (default), `burden`, or `max`). The process returns a score equivalent to the probability of both haplotypes being affected:
 
@@ -129,7 +130,7 @@ chr21:10541158:A:C	ENSG00000274391	0.0729
 
 
 
-## `run_call_chets.sh`: A wrapper that combines all the above (depcrecated at the moment.. to be tested with new version)
+## `run_call_chets.sh`: A wrapper that combines all the above (Needs to be tested with new version!)
 That script combines several tools to a pipeline for CompHet calling. In particular, for a given chromosome:
 1. Calls BCFtools (alternative to `get_non_ref_sites`) to extract non-ref genotypes for a phased BCF.
 2. Then uses `prepare_genemap.py` to prepare gene-variant maps according to each consequence (e.g. pLoF + damaging_missense).
