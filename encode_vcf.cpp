@@ -7,6 +7,7 @@
 #include <sstream>
 #include <string>
 #include <algorithm>
+#include <cmath>
 
 std::string getVersion()
 {
@@ -177,9 +178,9 @@ int main(int argc, char *argv[])
         // Check if line contains more than one word or is empty
         if (wordsInLine.size() != 1 || sampleLine.empty())
         {
-            std::cerr << "Error: Invalid samples file format. Expected one sample per line but detected more!" << std::endl;
+            std::cerr << "Error: Invalid samples file format. Expected one sample per line but detected more! Do you have empty lines?" << std::endl;
             printUsage(argv[0]);
-            sampleFile.close(); // Close the sample file when done
+            sampleFile.close();
             return 1;
         }
 
@@ -190,10 +191,13 @@ int main(int argc, char *argv[])
         }
     }
 
+    // set total alleles
+    int totalSamples = samples.size();
+    int geneAN = totalSamples * 2;
+
     std::map<std::string, std::map<std::string, int>> geneSampleDosage;
     std::map<std::string, std::string> geneToChromosome;
     std::map<std::string, int> geneAC;
-    std::map<std::string, int> geneAN;
     std::map<std::string, int> geneBI;
     std::map<std::string, int> geneChet;
     std::map<std::string, int> geneHom;
@@ -212,15 +216,15 @@ int main(int argc, char *argv[])
         std::istringstream iss(line);
         iss >> sample >> chromosome >> gene >> configuration >> dosage >> variantInfo;
 
+        // Skip processing this line if the sample is not in the set
+        if (samples.find(sample) == samples.end()) continue;
+
         // count instances of mono-allelic
         if (mode == "recessive" && dosage == 1.0f)
         {
             dosage = 0;
         }
 
-	// always add 2 to total
-        geneAN[gene] += 2;
-        
 	// count indiviual sites
         if (configuration == "chet")
         {
@@ -262,6 +266,7 @@ int main(int argc, char *argv[])
 
     // Print the output header
     std::cout << "##fileformat=VCFv4.2\n";
+    std::cout << "##EncodingMode=" << mode << "\n";  // Add this lin
     std::cout << "##FILTER=<ID=PASS,Description=\"All filters passed\">\n";
     for (const auto &chr : sortedContigs)
     {
@@ -274,6 +279,12 @@ int main(int argc, char *argv[])
     std::cout << "##INFO=<ID=HOM,Number=1,Type=Integer,Description=\"Homozygous Count\">\n";
     std::cout << "##INFO=<ID=HET,Number=1,Type=Integer,Description=\"Heterozygous Count\">\n";
     std::cout << "##INFO=<ID=CIS,Number=1,Type=Integer,Description=\"Cis pseudo Count \">\n";
+    // add dominance 
+    if (mode == "dominance") {
+        std::cout << "##INFO=<ID=r,Number=1,Type=Float,Description=\"Frequency of bi-allelic references (aa)\">\n";
+        std::cout << "##INFO=<ID=h,Number=1,Type=Float,Description=\"Frequency of heterozygotes (Aa)\">\n";
+        std::cout << "##INFO=<ID=a,Number=1,Type=Float,Description=\"Frequency of bi-allelic alternates (AA)\">\n";
+    } 
     std::cout << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
     for (const auto &sampleName : samples)
     {
@@ -290,23 +301,28 @@ int main(int argc, char *argv[])
             if (geneToChromosome[genePair.first] == chr)
             { // Only process genes on the current chromosome
                 rowIndex++;
+                int currentAN = geneAN;
                 int currentAC = geneAC[genePair.first];
-                int currentAN = geneAN[genePair.first];
                 int currentBI = geneBI[genePair.first];
                 int currentChet = geneChet[genePair.first];
                 int currentHom = geneHom[genePair.first];
                 int currentHet = geneHet[genePair.first];
                 int currentCis = geneCis[genePair.first];
-
-                // also get frequencies for dominance encoding
-		float aa = static_cast<float>(currentAN - currentAC) / currentAN;
-		float Aa = static_cast<float>(currentHet + currentCis) / currentAN;
-		float AA = static_cast<float>(currentBI * 2) / currentAN;
+		
+		// derive reference alleles
+		float aa_count = static_cast<float>((currentAN/2) - (currentCis + currentHet + currentBI));
+		float Aa_count = static_cast<float>(currentHet + currentCis);
+		float AA_count = static_cast<float>(currentBI);
 	
 		// rename accordinly	
-		float r = aa;
-		float h = Aa;
-		float a = AA;
+		float r = static_cast<float>(aa_count / (currentAN/2));
+		float h = static_cast<float>(Aa_count / (currentAN/2));
+		float a = static_cast<float>(AA_count / (currentAN/2));
+		float totalFrequency = r + h + a;
+		
+		if (std::abs(totalFrequency - 1.0f) > 0.001) {
+			std::cerr << "Warning: The sum of genotype frequencies (r + h + a) does not equal 1. Total frequency: " << totalFrequency << std::endl;
+		}
 
 		// only output variants that fit our criteria
                 if (currentAC >= minAC && currentAC < maxAC)
@@ -322,9 +338,16 @@ int main(int argc, char *argv[])
                               << ";BI=" << currentBI
                               << ";CHET=" << currentChet
                               << ";HOM=" << currentHom
-                              << ";CIS=" << currentCis
-                              << ";HET=" << currentHet
-                              << "\tDS";
+                              << ";CIS=" << currentCis;
+
+	            // Include r, h, a if mode is 'dominance'
+		    if (mode == "dominance") {
+			std::cout << ";r=" << r
+				  << ";h=" << h
+				  << ";a=" << a;
+		    }
+
+	            std::cout << "\tDS"; //
 
                     // get right side of body VCF
                     for (const auto &sample : samples)
