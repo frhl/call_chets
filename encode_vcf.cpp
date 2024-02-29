@@ -37,8 +37,8 @@ void printUsage(const char *path)
     std::cerr << "  --mode/-m    : Use 'additive' for dosages of 0, 1, and 2. This keeps" << std::endl;
     std::cerr << "                 heterozygotes and cis variants. Use 'recessive' for" << std::endl;
     std::cerr << "                 dosages of 0 and 2, targeting compound heterozygotes" << std::endl;
-    std::cerr << "                 and homozygotes. Use 'recessive-prob' to encode probability" << std::endl;
-    std::cerr << "                 of both haplotypes being affected (Default='additive')." << std::endl;
+    std::cerr << "                 and homozygotes. Use 'dominance' to encode orthogonal" << std::endl;
+    std::cerr << "                 contribution for domanince effects (Default='additive')." << std::endl;
     std::cerr << "  --min-ac     : Filters to genes with sum of DS >= argument" << std::endl;
     std::cerr << "  --max-ac     : Filters to genes with sum of DS < argument" << std::endl;
     std::cerr << "\nExample:" << std::endl;
@@ -148,9 +148,9 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (mode != "additive" && mode != "recessive" && mode != "recessive-prob")
+    if (mode != "additive" && mode != "recessive" && mode != "dominance")
     {
-        std::cerr << "Error: Invalid dosage encoding mode provided. Expecting 'additive', 'recessive' or 'recessive-prob'." << std::endl;
+        std::cerr << "Error: Invalid dosage encoding mode provided. Only 'additive', 'recessive' or 'dominance' are implemented!." << std::endl;
         printUsage(argv[0]);
         return 1;
     }
@@ -193,6 +193,7 @@ int main(int argc, char *argv[])
     std::map<std::string, std::map<std::string, int>> geneSampleDosage;
     std::map<std::string, std::string> geneToChromosome;
     std::map<std::string, int> geneAC;
+    std::map<std::string, int> geneAN;
     std::map<std::string, int> geneBI;
     std::map<std::string, int> geneChet;
     std::map<std::string, int> geneHom;
@@ -217,7 +218,10 @@ int main(int argc, char *argv[])
             dosage = 0;
         }
 
-        // count indiviual sites
+	// always add 2 to total
+        geneAN[gene] += 2;
+        
+	// count indiviual sites
         if (configuration == "chet")
         {
             geneChet[gene] += 1;
@@ -287,12 +291,24 @@ int main(int argc, char *argv[])
             { // Only process genes on the current chromosome
                 rowIndex++;
                 int currentAC = geneAC[genePair.first];
+                int currentAN = geneAN[genePair.first];
                 int currentBI = geneBI[genePair.first];
                 int currentChet = geneChet[genePair.first];
                 int currentHom = geneHom[genePair.first];
                 int currentHet = geneHet[genePair.first];
                 int currentCis = geneCis[genePair.first];
-                // only output variants that fit our criteria
+
+                // also get frequencies for dominance encoding
+		float aa = static_cast<float>(currentAN - currentAC) / currentAN;
+		float Aa = static_cast<float>(currentHet) / currentAN;
+		float AA = static_cast<float>(currentBI * 2) / currentAN;
+	
+		// rename accordinly	
+		float r = aa;
+		float h = Aa;
+		float a = AA;
+
+		// only output variants that fit our criteria
                 if (currentAC >= minAC && currentAC < maxAC)
                 {
 
@@ -302,6 +318,7 @@ int main(int argc, char *argv[])
                               << "\t" << genePair.first
                               << "\tA\tB\t.\t.\t"
                               << "AC=" << currentAC
+                              << ";AN=" << currentAN
                               << ";BI=" << currentBI
                               << ";CHET=" << currentChet
                               << ";HOM=" << currentHom
@@ -313,15 +330,23 @@ int main(int argc, char *argv[])
                     for (const auto &sample : samples)
                     {
                         std::cout << "\t";
+			float dosage = 0; // Default dosage
+		    	if (genePair.second.find(sample) != genePair.second.end()) {
+				dosage = genePair.second.at(sample);
+		    	}
 
-                        if (genePair.second.find(sample) != genePair.second.end())
-                        {
-                            std::cout << genePair.second.at(sample);
-                        }
-                        else
-                        {
-                            std::cout << "0"; // Default to 0 if sample-gene combo doesn't exist
-                        }
+		    	// Apply dominance transformation if mode is selected
+		    	if (mode == "dominance") {
+				if (dosage == 0.0) {
+			    		dosage = -h * a;
+				} else if (dosage == 1.0) {
+			 		dosage = 2 * a * r;
+				} else if (dosage == 2.0) {
+			    		dosage = -h * r;
+				}
+		    	}
+
+			std::cout << dosage;			
                     }
                     std::cout << std::endl;
                 }
