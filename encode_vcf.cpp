@@ -300,7 +300,7 @@ int main(int argc, char *argv[])
 
                 // also get frequencies for dominance encoding
 		float aa = static_cast<float>(currentAN - currentAC) / currentAN;
-		float Aa = static_cast<float>(currentHet) / currentAN;
+		float Aa = static_cast<float>(currentHet + currentCis) / currentAN;
 		float AA = static_cast<float>(currentBI * 2) / currentAN;
 	
 		// rename accordinly	
