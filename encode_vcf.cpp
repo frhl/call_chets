@@ -26,24 +26,25 @@ std::string getVersion()
 void printUsage(const char *path)
 {
     std::string version = getVersion();
-    std::cerr << "\nProgram: chet tools v" << version << "\n"
-              << std::endl;
-    std::cerr << "\n\nUsage: " << path << " --input <input> --samples <samples> --mode [<additive|recessive>]" << std::endl;
-    std::cerr << "\nDescription:" << std::endl;
-    std::cerr << "  Converts 'call_chets' output to VCF for downstream analysis." << std::endl;
-    std::cerr << "  Results are streamed to standard output." << std::endl;
-    std::cerr << "\nOptions:" << std::endl;
-    std::cerr << "  --input/-i   : Output from 'call_chets'.\n";
-    std::cerr << "  --samples/-s : List of samples. One per line. No header.\n";
-    std::cerr << "  --mode/-m    : Use 'additive' for dosages of 0, 1, and 2. This keeps" << std::endl;
-    std::cerr << "                 heterozygotes and cis variants. Use 'recessive' for" << std::endl;
-    std::cerr << "                 dosages of 0 and 2, targeting compound heterozygotes" << std::endl;
-    std::cerr << "                 and homozygotes. Use 'dominance' to encode orthogonal" << std::endl;
-    std::cerr << "                 contribution for domanince effects (Default='additive')." << std::endl;
-    std::cerr << "  --min-ac     : Filters to genes with sum of DS >= argument" << std::endl;
-    std::cerr << "  --max-ac     : Filters to genes with sum of DS < argument" << std::endl;
-    std::cerr << "\nExample:" << std::endl;
-    std::cerr << "  ./encode_vcf called_chets.txt.gz samples.txt additive | bgzip > out.vcf.gz\n\n";
+    std::cerr << "\nProgram: chet tools v" << version << "\n";
+    std::cerr << "\nUsage: " << path 
+              << " --input <input> --samples <samples>"
+              << " --mode [<additive|recessive|dominance|001|012|010|011>]\n";
+    std::cerr << "\nDescription:";
+    std::cerr << "\n  Converts 'call_chets' output to VCF for downstream analysis.";
+    std::cerr << "\n  Results are streamed to standard output.\n";
+    std::cerr << "\nOptions:";
+    std::cerr << "\n  --input/-i   : Output from 'call_chets'.";
+    std::cerr << "\n  --samples/-s : List of samples. One per line. No header.";
+    std::cerr << "\n  --mode/-m    : Specify genotype/dosage encoding. Use 'additive' or '012'";
+    std::cerr << "\n                 for dosages of 0, 1, and 2. Use 'recessive' or '001' for";
+    std::cerr << "\n                 dosages of 0 and 2. Use 'dominance' to encode orthogonal";
+    std::cerr << "\n                 contribution for dominance effects. '010' and '011' represent";
+    std::cerr << "\n                 custom modes setting bi-allelics to zero or one respectively.";
+    std::cerr << "\n  --min-ac     : Filters to genes with sum of DS >= argument.";
+    std::cerr << "\n  --max-ac     : Filters to genes with sum of DS < argument.\n";
+    std::cerr << "\nExample:";
+    std::cerr << "\n  ./encode_vcf called_chets.txt.gz samples.txt additive | bgzip > out.vcf.gz\n\n";
 }
 
 std::vector<std::string> sortChromosomes(const std::set<std::string> &contigs)
@@ -100,7 +101,7 @@ int main(int argc, char *argv[])
         else if ((arg == "--mode" || arg == "-m") && i + 1 < argc)
         {
             mode = argv[++i];
-        }
+       }
         else if (arg == "--min-ac")
         {
             minAC = std::stoi(argv[++i]);
@@ -148,10 +149,14 @@ int main(int argc, char *argv[])
         std::cerr << "Error: Cannot open <samples> file for reading: " << pathSamples << std::endl;
         return 1;
     }
+    
+    // normalise mode input
+    if (mode == "recessive") mode = "001";
+    else if (mode == "additive") mode = "012";
 
-    if (mode != "additive" && mode != "recessive" && mode != "dominance")
+    if (mode != "001" && mode != "012" && mode != "010" && mode != "011" &&  mode != "dominance")
     {
-        std::cerr << "Error: Invalid dosage encoding mode provided. Only 'additive', 'recessive' or 'dominance' are implemented!." << std::endl;
+        std::cerr << "Error: Invalid dosage encoding mode provided. Only '012|additive, '001|recessive', '010' or 'dominance'." << std::endl;
         printUsage(argv[0]);
         return 1;
     }
@@ -219,10 +224,22 @@ int main(int argc, char *argv[])
         // Skip processing this line if the sample is not in the set
         if (samples.find(sample) == samples.end()) continue;
 
-        // count instances of mono-allelic
-        if (mode == "recessive" && dosage == 1.0f)
+	// for recessive mode, set hets to zero
+        if (mode == "001" && dosage == 1.0f)
         {
             dosage = 0;
+        }
+
+	// for het mode, set bi-allelic as zero
+        if (mode == "010" && dosage == 2.0f)
+        {
+            dosage = 0;
+        }
+
+	// for '011' mode, set bi-allelic to 1
+        if (mode == "011" && dosage == 2.0f)
+        {
+            dosage = 1;
         }
 
 	// count indiviual sites
@@ -308,7 +325,7 @@ int main(int argc, char *argv[])
                 int currentHom = geneHom[genePair.first];
                 int currentHet = geneHet[genePair.first];
                 int currentCis = geneCis[genePair.first];
-		
+
 		// derive reference alleles
 		float aa_count = static_cast<float>((currentAN/2) - (currentCis + currentHet + currentBI));
 		float Aa_count = static_cast<float>(currentHet + currentCis);
@@ -318,11 +335,7 @@ int main(int argc, char *argv[])
 		float r = static_cast<float>(aa_count / (currentAN/2));
 		float h = static_cast<float>(Aa_count / (currentAN/2));
 		float a = static_cast<float>(AA_count / (currentAN/2));
-		float totalFrequency = r + h + a;
-		
-		if (std::abs(totalFrequency - 1.0f) > 0.001) {
-			std::cerr << "Warning: The sum of genotype frequencies (r + h + a) does not equal 1. Total frequency: " << totalFrequency << std::endl;
-		}
+		float totalFrequency = r + h + a; // should eq to 1
 
 		// only output variants that fit our criteria
                 if (currentAC >= minAC && currentAC < maxAC)
