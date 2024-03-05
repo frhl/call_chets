@@ -43,6 +43,7 @@ void printUsage(const char *path)
     std::cerr << "\n                 custom modes setting bi-allelics to zero or one respectively.";
     std::cerr << "\n  --min-ac     : Filters to genes with sum of DS >= argument.";
     std::cerr << "\n  --max-ac     : Filters to genes with sum of DS < argument.\n";
+    std::cerr << "\n  --all-info   : Populate INFO column with all details (relevant when mode='dominance').\n";
     std::cerr << "\nExample:";
     std::cerr << "\n  ./encode_vcf called_chets.txt.gz samples.txt additive | bgzip > out.vcf.gz\n\n";
 }
@@ -81,6 +82,9 @@ int main(int argc, char *argv[])
     std::string mode = "additive";
     int minAC = 0;
     int maxAC = INT_MAX;
+    float scalingFactor = 1.0;
+    bool scaleDosage = true; 
+    bool allInfo = false; 
 
     for (int i = 1; i < argc; ++i)
     {
@@ -101,8 +105,8 @@ int main(int argc, char *argv[])
         else if ((arg == "--mode" || arg == "-m") && i + 1 < argc)
         {
             mode = argv[++i];
-       }
-        else if (arg == "--min-ac")
+        }
+        else if (arg == "--min-ac" && i + 1 < argc)
         {
             minAC = std::stoi(argv[++i]);
             if (minAC < 0)
@@ -111,7 +115,7 @@ int main(int argc, char *argv[])
                 return 1;
             }
         }
-        else if (arg == "--max-ac")
+        else if (arg == "--max-ac" && i + 1 < argc)
         {
             maxAC = std::stoi(argv[++i]);
             if (maxAC < 0)
@@ -120,7 +124,19 @@ int main(int argc, char *argv[])
                 return 1;
             }
         }
-        else
+	else if (arg == "--scaling-factor" && i + 1 < argc)
+        {
+            scalingFactor = std::stoi(argv[++i]);
+        }
+        else if (arg == "--no-dosage-scaling")
+        {
+            scaleDosage = false; // Disable dosage scaling which is only relevant when mode='dominance'
+        }
+        else if (arg == "--all-info")
+        {
+            allInfo = true;
+        }
+	else
         {
             std::cerr << "Error! Unknown or incomplete argument: " << arg << std::endl;
             printUsage(argv[0]);
@@ -326,6 +342,12 @@ int main(int argc, char *argv[])
                 int currentHet = geneHet[genePair.first];
                 int currentCis = geneCis[genePair.first];
 
+		// Skip processing this gene/pseudo-variant if 
+		// in dominance mode and no homozygotes present
+		if (mode == "dominance" && currentBI == 0) {
+			continue;
+		}
+
 		// derive reference alleles
 		float aa_count = static_cast<float>((currentAN/2) - (currentCis + currentHet + currentBI));
 		float Aa_count = static_cast<float>(currentHet + currentCis);
@@ -336,6 +358,16 @@ int main(int argc, char *argv[])
 		float h = static_cast<float>(Aa_count / (currentAN/2));
 		float a = static_cast<float>(AA_count / (currentAN/2));
 		float totalFrequency = r + h + a; // should eq to 1
+
+		// Pre-compute the three possible dosage configurations
+		// when performing dominance deviation
+		float dom_dosage_aa = -h * a; // Dosage for genotype aa
+		float dom_dosage_Aa = 2 * a * r; // Dosage for genotype Aa
+		float dom_dosage_AA = -h * r; // Dosage for genotype AA
+
+		// Find min and max dosage values for scaling
+		float minDomDosage = std::min({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+		float maxDomDosage = std::max({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
 
 		// only output variants that fit our criteria
                 if (currentAC >= minAC && currentAC < maxAC)
@@ -353,11 +385,16 @@ int main(int argc, char *argv[])
                               << ";HOM=" << currentHom
                               << ";CIS=" << currentCis;
 
-	            // Include r, h, a if mode is 'dominance'
-		    if (mode == "dominance") {
+	            // be verbose at times'
+		    if ((mode == "dominance") & (allInfo == true)) {
 			std::cout << ";r=" << r
 				  << ";h=" << h
-				  << ";a=" << a;
+				  << ";a=" << a
+				  << ";minDosage=" << minDomDosage
+				  << ";maxDosage=" << maxDomDosage
+				  << ";DS0=" << 2*(((-h*a) - minDomDosage)/(maxDomDosage - minDomDosage))
+				  << ";DS1=" << 2*(((2*a *r) - minDomDosage)/(maxDomDosage - minDomDosage))
+				  << ";DS2=" << 2*(((-h*r) - minDomDosage)/(maxDomDosage - minDomDosage));
 		    }
 
 	            std::cout << "\tDS"; //
@@ -366,13 +403,14 @@ int main(int argc, char *argv[])
                     for (const auto &sample : samples)
                     {
                         std::cout << "\t";
-			float dosage = 0; // Default dosage
+			float dosage = 0;
 		    	if (genePair.second.find(sample) != genePair.second.end()) {
 				dosage = genePair.second.at(sample);
 		    	}
 
 		    	// Apply dominance transformation if mode is selected
-		    	if (mode == "dominance") {
+		    	// Note, that these dosages are scaled to be between 0 and 2.
+			if (mode == "dominance") {
 				if (dosage == 0.0) {
 			    		dosage = -h * a;
 				} else if (dosage == 1.0) {
@@ -380,9 +418,18 @@ int main(int argc, char *argv[])
 				} else if (dosage == 2.0) {
 			    		dosage = -h * r;
 				}
-		    	}
-
-			std::cout << dosage;			
+				// scale dosage to be between 0 and 2
+				if (scaleDosage) {
+					dosage = 2*((dosage - minDomDosage)/(maxDomDosage - minDomDosage));
+				}
+		    	
+				// for debugging
+				if (scalingFactor != 0)
+				{
+					dosage *=scalingFactor;
+				}
+			}		
+			std::cout << dosage;
                     }
                     std::cout << std::endl;
                 }
