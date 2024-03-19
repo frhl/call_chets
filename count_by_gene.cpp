@@ -6,7 +6,7 @@
 #include <vector>
 #include <sstream>
 #include <string>
-#include <zlib.h> // For gzipped file operations
+#include <zlib.h>
 #include <limits>
 #include <set>
 
@@ -26,11 +26,13 @@ void printUsage(const char* path) {
     std::cerr << "  --input/-i                : Input VCF file.\n";
     std::cerr << "  --map/-m                  : Gzipped variant to gene mapping file.\n";
     std::cerr << "  --max-af                  : Maximum allele frequency threshold (default includes all).\n";
+    std::cerr << "  --max-maf                 : Maximum minor allele frequency threshold (default includes all).\n";
 }
 
 int main(int argc, char* argv[]) {
     std::string pathInput, outputPath = "gene_counts.txt", mappingFilePath;
     float maxAf = std::numeric_limits<float>::max();
+    float maxMaf = std::numeric_limits<float>::max(); 
     int totalSamples = 0;
 
     for (int i = 1; i < argc; ++i) {
@@ -44,6 +46,8 @@ int main(int argc, char* argv[]) {
             mappingFilePath = argv[++i];
         } else if (arg == "--max-af" && i + 1 < argc) {
             maxAf = std::stof(argv[++i]);
+	} else if (arg == "--max-maf" && i + 1 < argc) {
+	    maxMaf = std::stof(argv[++i]);
         } else {
             std::cerr << "Error! Unknown or incomplete argument: " << arg << std::endl;
             printUsage(argv[0]);
@@ -111,23 +115,40 @@ int main(int argc, char* argv[]) {
     GeneToIndivMap geneToIndividuals;
     int ngt, *gt_arr = nullptr, ngt_arr = 0;
 
-    // Iterate over all records (variants) in the VCF file
+    // iterate over all variants
     while (bcf_read(vcfFile, header, record) == 0) {
         bcf_unpack(record, BCF_UN_ALL);
         std::string chrom = bcf_hdr_id2name(header, record->rid);
         int pos = record->pos + 1;
         std::string ref = record->d.allele[0];
-        
-        // If there are alternate alleles, just consider the first one for simplicity
         std::string alt = record->n_allele > 1 ? record->d.allele[1] : ".";
         std::string variantKey = chrom + ":" + std::to_string(pos) + ":" + ref + ":" + alt;
 
-        // Check if the current variant is in our mapping
+        // Check if the current variant is in mapping
         if (variantToGene.find(variantKey) != variantToGene.end()) {
-            ngt = bcf_get_genotypes(header, record, &gt_arr, &ngt_arr);
-            if (ngt <= 0) continue; // Skip if no genotype information
+           ngt = bcf_get_genotypes(header, record, &gt_arr, &ngt_arr);
+           if (ngt <= 0) continue; // Skip if no genotype information
 
-            int n_samples = bcf_hdr_nsamples(header);
+           int n_samples = bcf_hdr_nsamples(header);
+	   int alleleCount = 0;
+
+           for (int i = 0; i < n_samples; ++i) {
+                if (gt_arr[i * 2] == bcf_gt_missing || gt_arr[i * 2 + 1] == bcf_gt_missing) continue;
+
+                int allele1 = bcf_gt_allele(gt_arr[i * 2]);
+                int allele2 = bcf_gt_allele(gt_arr[i * 2 + 1]);
+
+                 // Count allele occurrences
+                 alleleCount += (allele1 > 0) + (allele2 > 0);
+           }
+
+           // Calculate allele frequency
+           float alleleFrequency = static_cast<float>(alleleCount) / (2 * n_samples);
+           float minorAlleleFrequency = std::min(alleleFrequency, 1.0f - alleleFrequency);
+
+           // Skip variant if allele frequency exceeds maxAf
+	   if (alleleFrequency > maxAf || minorAlleleFrequency > maxMaf) continue;
+
 	
 	   for (int i = 0; i < totalSamples; ++i) {
 	   if (gt_arr[i * 2] == bcf_gt_missing || gt_arr[i * 2 + 1] == bcf_gt_missing) continue;
@@ -143,16 +164,8 @@ int main(int argc, char* argv[]) {
 		    if (isHomAlt) indiv.hasHomAlt = true;
 		    else if (isHet) indiv.hasHet = true;
 		    else if (isHomRef) indiv.hasHomRef = !indiv.hasHomAlt && !indiv.hasHet;
-	    }
+		}
 	}
-
-	    // Calculate allele count (AC) and allele frequency (AF)
-            //int alleleCount = 2 * homAltCount + hetCount;
-            //float alleleFrequency = static_cast<float>(alleleCount) / (2 * totalSamples);
-
-            // Skip variant if allele frequency exceeds maxAf
-            //if (alleleFrequency > maxAf) continue;
-
 
         }
     }
