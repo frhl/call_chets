@@ -6,12 +6,14 @@ TARGET1 = filter_vcf_by_pp
 TARGET2 = call_chets
 TARGET3 = encode_vcf
 TARGET4 = transform
+TARGET5 = count_by_gene
 SOURCE1 = filter_vcf_by_pp.cpp
 SOURCE2 = call_chets.cpp
 SOURCE3 = encode_vcf.cpp
 SOURCE4 = transform.cpp
+SOURCE5 = count_by_gene.cpp
 
-all: $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4)
+all: $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5)
 
 $(TARGET1): $(SOURCE1)
 		$(CC) $(CFLAGS) $(INCLUDES) $(SOURCE1) -o $(TARGET1) $(LIBS)
@@ -25,8 +27,11 @@ $(TARGET3): $(SOURCE3)
 $(TARGET4): $(SOURCE4)
 		$(CC) $(CFLAGS) $(INCLUDES) $(SOURCE4) -o $(TARGET4) $(LIBS)
 
+$(TARGET5): $(SOURCE5)
+		$(CC) $(CFLAGS) $(INCLUDES) $(SOURCE5) -o $(TARGET5) $(LIBS)
+
 
 
 clean:
-		rm -f $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4)
+		rm -f $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5)
 
