@@ -115,96 +115,102 @@ int main(int argc, char *argv[]) {
         int aa_count = 0, Aa_count = 0, AA_count = 0;
         for (int i = 0; i < n_samples; ++i) {
             
-	    // point to the current sample	
-	    int *gt_ptr = gt_arr + i * 2;
+		// point to the current sample	
+		int *gt_ptr = gt_arr + i * 2;
 
-            // Check for missing genotype data
-            if (bcf_gt_is_missing(gt_ptr[0]) || bcf_gt_is_missing(gt_ptr[1])) continue;
+		// Check for missing genotype data
+		if (bcf_gt_is_missing(gt_ptr[0]) || bcf_gt_is_missing(gt_ptr[1])) continue;
 
-            int allele1 = bcf_gt_allele(gt_ptr[0]);
-            int allele2 = bcf_gt_allele(gt_ptr[1]);
+		int allele1 = bcf_gt_allele(gt_ptr[0]);
+		int allele2 = bcf_gt_allele(gt_ptr[1]);
 
-	    // count hom alt, het, hom ref
-            if (allele1 == 0 && allele2 == 0) aa_count++;
-            else if (allele1 != allele2) Aa_count++;
-            else if (allele1 > 0 && allele2 > 0) AA_count++;
-        }
-        
-        // Calculate allele frequencies based on genotype counts
-        float r = static_cast<float>(aa_count) / n_samples;
-        float h = static_cast<float>(Aa_count) / n_samples;
-        float a = static_cast<float>(AA_count) / n_samples;
+		// count hom alt, het, hom ref
+		if (allele1 == 0 && allele2 == 0) aa_count++;
+		else if (allele1 != allele2) Aa_count++;
+		else if (allele1 > 0 && allele2 > 0) AA_count++;
+	}
+		      
+	// only procede with encoding if at least one hom_alt is present
+	if (AA_count > 0){
 
-        // Calculate dominance dosages
-        float dom_dosage_aa = -h * a;
-        float dom_dosage_Aa = 2 * a * r;
-        float dom_dosage_AA = -h * r;
+		// Calculate allele frequencies based on genotype counts
+		float r = static_cast<float>(aa_count) / n_samples;
+		float h = static_cast<float>(Aa_count) / n_samples;
+		float a = static_cast<float>(AA_count) / n_samples;
 
-        // Find min and max dominance dosage values for scaling
-        float minDomDosage = std::min({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
-        float maxDomDosage = std::max({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+		// Calculate dominance dosages
+		float dom_dosage_aa = -h * a;
+		float dom_dosage_Aa = 2 * a * r;
+		float dom_dosage_AA = -h * r;
 
-	 // Output VCF line for this variant
-        std::cout << bcf_hdr_id2name(hdr, rec->rid) << "\t" << (rec->pos + 1) << "\t.\t"
-                  << rec->d.allele[0] << "\t"; // REF allele
-        if (rec->n_allele > 1) {
-            std::cout << rec->d.allele[1]; // ALT allele
-        } else {
-            std::cout << ".";
-        }
-        
-	std::cout << "\t.\t.\t"; // QUAL and FILTER columns
-        std::cout << "AC=" << Aa_count + 2*AA_count << ";AN=" << 2*n_samples; // INFO column
+		// Find min and max dominance dosage values for scaling
+		float minDomDosage = std::min({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+		float maxDomDosage = std::max({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
 
-	if ((mode == "dominance") & (allInfo == true)) {
-	   std::cout << ";r=" << r
-		  << ";h=" << h
-		  << ";a=" << a
-		  << ";minDosage=" << minDomDosage
-		  << ";maxDosage=" << maxDomDosage
-		  << ";DS0=" << 2*(((-h*a) - minDomDosage)/(maxDomDosage - minDomDosage))
-		  << ";DS1=" << 2*(((2*a *r) - minDomDosage)/(maxDomDosage - minDomDosage))
-		  << ";DS2=" << 2*(((-h*r) - minDomDosage)/(maxDomDosage - minDomDosage));
-         }
+		 // Output VCF line for this variant
+		std::cout << bcf_hdr_id2name(hdr, rec->rid) << "\t" << (rec->pos + 1) << "\t.\t"
+			  << rec->d.allele[0] << "\t"; // REF allele
+		if (rec->n_allele > 1) {
+		    std::cout << rec->d.allele[1]; // ALT allele
+		} else {
+		    std::cout << ".";
+		}
+		
+		std::cout << "\t.\t.\t"; // QUAL and FILTER columns
+		std::cout << "AC=" << Aa_count + 2*AA_count << ";AN=" << 2*n_samples; // INFO column
 
-         std::cout << "\tDS"; // FORMAT column
+		if ((mode == "dominance") & (allInfo == true)) {
+		   std::cout << ";r=" << r
+			  << ";h=" << h
+			  << ";a=" << a
+			  << ";minDosage=" << minDomDosage
+			  << ";maxDosage=" << maxDomDosage
+			  << ";DS0=" << 2*(((-h*a) - minDomDosage)/(maxDomDosage - minDomDosage))
+			  << ";DS1=" << 2*(((2*a *r) - minDomDosage)/(maxDomDosage - minDomDosage))
+			  << ";DS2=" << 2*(((-h*r) - minDomDosage)/(maxDomDosage - minDomDosage));
+		 }
 
-	 // Output transformed genotypes based on dominance model
-        for (int i = 0; i < n_samples; ++i) {
-            int *gt_ptr = gt_arr + i * 2;
-            float dosage = 0.0;
+		 std::cout << "\tDS"; // FORMAT column
 
-            if (!bcf_gt_is_missing(gt_ptr[0]) && !bcf_gt_is_missing(gt_ptr[1])) {
-                int allele1 = bcf_gt_allele(gt_ptr[0]);
-                int allele2 = bcf_gt_allele(gt_ptr[1]);
+		 // Output transformed genotypes based on dominance model
+		for (int i = 0; i < n_samples; ++i) {
+		    int *gt_ptr = gt_arr + i * 2;
+		    float dosage = 0.0;
 
-		if (allele1 == 0 && allele2 == 0) {
-			dosage = -h * a;
-		} else if (allele1 != allele2) {
-			dosage = 2 * a * r;
-		} else if (allele1 > 0 && allele2 > 0) {
-			dosage = -h * r;
+		    if (!bcf_gt_is_missing(gt_ptr[0]) && !bcf_gt_is_missing(gt_ptr[1])) {
+			int allele1 = bcf_gt_allele(gt_ptr[0]);
+			int allele2 = bcf_gt_allele(gt_ptr[1]);
+
+			if (allele1 == 0 && allele2 == 0) {
+				dosage = -h * a;
+			} else if (allele1 != allele2) {
+				dosage = 2 * a * r;
+			} else if (allele1 > 0 && allele2 > 0) {
+				dosage = -h * r;
+			}
+
+			// scale dosage to be between 0 and 2
+			if (scaleDosage) {
+				dosage = 2*((dosage - minDomDosage)/(maxDomDosage - minDomDosage));
+			}
+
+			// for debugging
+			if (scalingFactor != 0)
+			{
+				dosage *=scalingFactor;
+			}
+
+		    }
+
+		    std::cout << "\t" << dosage;
 		}
 
-		// scale dosage to be between 0 and 2
-		if (scaleDosage) {
-			dosage = 2*((dosage - minDomDosage)/(maxDomDosage - minDomDosage));
-		}
-
-		// for debugging
-		if (scalingFactor != 0)
-		{
-			dosage *=scalingFactor;
-		}
-
-            }
-
-            std::cout << "\t" << dosage;
-        }
-
-        std::cout << std::endl;
-
- 
+		std::cout << std::endl;
+	} else {
+		std::cerr << "variant '" << bcf_hdr_id2name(hdr, rec->rid) << ":" << (rec->pos + 1) << ":" << rec->d.allele[0] << ":" << (rec->n_allele > 1 ? rec->d.allele[1] : ".") << "";
+		std::cerr << "' has no homozygous alternate alleles. Skipping..\n";
+	}
+	 
     }
 
     std::cout << "test1";
