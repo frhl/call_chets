@@ -13,11 +13,17 @@
 
 void printUsage(const char *path) {
     std::cerr << "\nProgram: VCF Dominance Processor\n";
-    std::cerr << "Usage: " << path << " --input <input.vcf.gz> --mode dominance\n";
+    std::cerr << "Usage: " << path << " --input <input.vcf.gz> --mode dominance [--output <output.vcf.gz>] [--format vcf|bcf|vcf.gz] [--scale-dosages] [--scale-dosages-factor <factor>] [--all-info]\n";
     std::cerr << "Options:\n";
-    std::cerr << "  --input/-i   : Input VCF/BCF file.\n";
-    std::cerr << "  --mode/-m    : Specify mode for processing genotypes. Supports 'dominance'.\n";
+    std::cerr << "  --input/-i                : Input VCF/BCF file.\n";
+    std::cerr << "  --mode/-m                 : Specify mode for processing genotypes. Supports 'dominance'.\n";
+    std::cerr << "  --scale-dosages           : Enable dosage scaling. Scales dosages to be between 0 and 2 based on the calculated min and max dosages.\n";
+    std::cerr << "  --scale-dosages-factor    : Apply a scaling factor to the dosages. Default is 1.0.\n";
+    std::cerr << "  --all-info                : Include all calculated information (e.g., allele frequencies, min/max dosage) in the INFO field.\n";
+    std::cerr << "\nExample:\n";
+    std::cerr << "  " << path << " --input example.vcf.gz --scale-dosages | gzip > output.vcf.gz \n";
 }
+
 
 int main(int argc, char *argv[]) {
     std::string pathInput;
@@ -25,6 +31,8 @@ int main(int argc, char *argv[]) {
     float scalingFactor = 1.0;
     bool scaleDosage = false;
     bool allInfo = false;
+    std::string outputPath = "-";
+    std::string outputFormat = "wz"; 
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -32,11 +40,11 @@ int main(int argc, char *argv[]) {
             printUsage(argv[0]);
             return 0;
         }
-        else if (arg == "--input" || arg == "-i") {
-            if (i + 1 < argc) pathInput = argv[++i];
+        else if ((arg == "--input" || arg == "-i") && i + 1 < argc) {
+            pathInput = argv[++i];
         }
-        else if (arg == "--mode" || arg == "-m") {
-            if (i + 1 < argc) mode = argv[++i];
+        else if ((arg == "--mode" || arg == "-m") && i + 1 < argc) {
+            mode = argv[++i];
         }
 	else if (arg == "--scale-dosages-factor" && i + 1 < argc)
         {
@@ -49,6 +57,12 @@ int main(int argc, char *argv[]) {
         else if (arg == "--all-info")
         {
             allInfo = true;
+        }
+	else
+        {
+            std::cerr << "Error! Unknown or incomplete argument: " << arg << std::endl;
+            printUsage(argv[0]);
+            return 1;
         }
     }
 
@@ -188,7 +202,7 @@ int main(int argc, char *argv[]) {
             std::cout << "\t" << dosage;
         }
 
-        std::cout << std::endl; // End of line for this variant
+        std::cout << std::endl;
 
  
     }
