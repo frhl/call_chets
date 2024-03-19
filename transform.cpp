@@ -31,8 +31,8 @@ int main(int argc, char *argv[]) {
     float scalingFactor = 1.0;
     bool scaleDosage = false;
     bool allInfo = false;
-    std::string outputPath = "-";
-    std::string outputFormat = "wz"; 
+    int countVariantsWithoutHomAlt = 0;
+    const int limit = 5;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -207,13 +207,16 @@ int main(int argc, char *argv[]) {
 
 		std::cout << std::endl;
 	} else {
-		std::cerr << "variant '" << bcf_hdr_id2name(hdr, rec->rid) << ":" << (rec->pos + 1) << ":" << rec->d.allele[0] << ":" << (rec->n_allele > 1 ? rec->d.allele[1] : ".") << "";
-		std::cerr << "' has no homozygous alternate alleles. Skipping..\n";
+		countVariantsWithoutHomAlt++;
+		if (countVariantsWithoutHomAlt <= limit){
+			std::cerr << "variant '" << bcf_hdr_id2name(hdr, rec->rid) << ":" << (rec->pos + 1) << ":" << rec->d.allele[0] << ":" << (rec->n_allele > 1 ? rec->d.allele[1] : ".") << "";
+			std::cerr << "' has no homozygous alternate alleles. Skipping..\n";
+		}
 	}
 	 
     }
+    std::cerr << "Total discarded variants without homozygous alternate alleles: " << countVariantsWithoutHomAlt << std::endl;
 
-    std::cout << "test1";
 
     // Cleanup
     free(gt_arr);
