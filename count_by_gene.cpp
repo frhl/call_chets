@@ -8,19 +8,16 @@
 #include <string>
 #include <zlib.h> // For gzipped file operations
 #include <limits>
+#include <set>
 
-// Define a structure to hold genotype counts for a gene
-struct GenotypeCounts {
-    int homRefCount = 0;
-    int hetCount = 0;
-    int homAltCount = 0;
-
-    void addCounts(int homRef, int het, int homAlt) {
-        homRefCount += homRef;
-        hetCount += het;
-        homAltCount += homAlt;
-    }
+struct IndividualGenotype {
+    bool hasHomAlt = false;
+    bool hasHet = false;
+    bool hasHomRef = false;
 };
+
+
+using GeneToIndivMap = std::map<std::string, std::map<int, IndividualGenotype>>;
 
 void printUsage(const char* path) {
     std::cerr << "\nProgram: VCF Gene Counter\n";
@@ -111,7 +108,7 @@ int main(int argc, char* argv[]) {
     }
 
     totalSamples = bcf_hdr_nsamples(header);
-    std::map<std::string, GenotypeCounts> geneCounts;
+    GeneToIndivMap geneToIndividuals;
     int ngt, *gt_arr = nullptr, ngt_arr = 0;
 
     // Iterate over all records (variants) in the VCF file
@@ -127,36 +124,36 @@ int main(int argc, char* argv[]) {
 
         // Check if the current variant is in our mapping
         if (variantToGene.find(variantKey) != variantToGene.end()) {
-            // Get genotype information
             ngt = bcf_get_genotypes(header, record, &gt_arr, &ngt_arr);
             if (ngt <= 0) continue; // Skip if no genotype information
 
             int n_samples = bcf_hdr_nsamples(header);
-            int homRefCount = 0, hetCount = 0, homAltCount = 0;
+	
+	   for (int i = 0; i < totalSamples; ++i) {
+	   if (gt_arr[i * 2] == bcf_gt_missing || gt_arr[i * 2 + 1] == bcf_gt_missing) continue;
 
-            for (int i = 0; i < n_samples; ++i) {
-                // Check each allele of the genotype (diploid assumption: two alleles per genotype)
-                if (gt_arr[i * 2] == bcf_gt_missing || gt_arr[i * 2 + 1] == bcf_gt_missing) continue; // Skip missing genotypes
-                
-                int allele1 = bcf_gt_allele(gt_arr[i * 2]);
-                int allele2 = bcf_gt_allele(gt_arr[i * 2 + 1]);
+	   int allele1 = bcf_gt_allele(gt_arr[i * 2]);
+	   int allele2 = bcf_gt_allele(gt_arr[i * 2 + 1]);
+	   bool isHomRef = allele1 == 0 && allele2 == 0;
+	   bool isHet = allele1 != allele2;
+	   bool isHomAlt = allele1 == allele2 && allele1 != 0;
 
-                if (allele1 == 0 && allele2 == 0) homRefCount++;
-                else if (allele1 != allele2) hetCount++;
-                else homAltCount++; // Assuming only one alt allele for simplicity
-            }
+	   for (const auto& gene : variantToGene[variantKey]) {
+		    auto& indiv = geneToIndividuals[gene][i];
+		    if (isHomAlt) indiv.hasHomAlt = true;
+		    else if (isHet) indiv.hasHet = true;
+		    else if (isHomRef) indiv.hasHomRef = !indiv.hasHomAlt && !indiv.hasHet;
+	    }
+	}
 
 	    // Calculate allele count (AC) and allele frequency (AF)
-            int alleleCount = 2 * homAltCount + hetCount;
-            float alleleFrequency = static_cast<float>(alleleCount) / (2 * totalSamples);
+            //int alleleCount = 2 * homAltCount + hetCount;
+            //float alleleFrequency = static_cast<float>(alleleCount) / (2 * totalSamples);
 
             // Skip variant if allele frequency exceeds maxAf
-            if (alleleFrequency > maxAf) continue;
+            //if (alleleFrequency > maxAf) continue;
 
-            // Add counts to all genes this variant is associated with
-            for (const auto& gene : variantToGene[variantKey]) {
-                geneCounts[gene].addCounts(homRefCount, hetCount, homAltCount);
-            }
+
         }
     }
 
@@ -167,13 +164,24 @@ int main(int argc, char* argv[]) {
     bcf_close(vcfFile);
 
     std::cout << "region\taa\tAa\tAA\tsamples\n";
-    for (const auto& pair : geneCounts) {
-	std::cout << pair.first << "\t" 
-                << pair.second.homRefCount << "\t" 
-                << pair.second.hetCount << "\t" 
-                << pair.second.homAltCount << "\t"
-		<< totalSamples << "\n";
+    // Output preparation and writing
+    for (const auto& genePair : geneToIndividuals) {
+        const auto& gene = genePair.first;
+        const auto& individuals = genePair.second;
+
+        int homRefCount = 0, hetCount = 0, homAltCount = 0;
+        for (const auto& indivPair : individuals) {
+            if (indivPair.second.hasHomAlt) homAltCount++;
+            else if (indivPair.second.hasHet) hetCount++;
+            else if (indivPair.second.hasHomRef) homRefCount++;
+        }
+	std::cout << gene << "\t" 
+                  << homAltCount << "\t"
+                  << hetCount << "\t"
+                  << homRefCount << "\t"
+                  << totalSamples << "\n";
     }
+
 
     return 0;
 }
