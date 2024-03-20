@@ -24,17 +24,25 @@ RUN make
 RUN make install
 WORKDIR ..
 
+# Fix lhts paths
+RUN ldconfig
+
 # copy scripts
 WORKDIR app
 COPY makefile makefile
 COPY call_chets.cpp call_chets.cpp
 COPY encode_vcf.cpp encode_vcf.cpp
+COPY transform.cpp transform.cpp
+COPY count_by_gene.cpp count_by_gene.cpp
 COPY .version .version
 RUN make
 
 # move to folder in PATH
 RUN mv call_chets /usr/local/bin/.
 RUN mv encode_vcf /usr/local/bin/.
+RUN mv transform /usr/local/bin/.
+RUN mv count_by_gene /usr/local/bin/.
+
 
 # Set default command to R when the container starts
 #CMD ["bash"]
