@@ -103,8 +103,16 @@ int main(int argc, char *argv[]) {
     std::cout << "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count in genotypes\">\n";
     std::cout << "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Total number of alleles in called genotypes\">\n";
     std::cout << "##FORMAT=<ID=DS,Number=1,Type=Float,Description=\"Dosage of the alternate allele based on dominance model\">\n";
-    std::cout << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\n";
-
+    if (allInfo == true) {
+        std::cout << "##INFO=<ID=r,Number=1,Type=Float,Description=\"Frequency of bi-allelic references (aa)\">\n";
+        std::cout << "##INFO=<ID=h,Number=1,Type=Float,Description=\"Frequency of heterozygotes (Aa)\">\n";
+        std::cout << "##INFO=<ID=a,Number=1,Type=Float,Description=\"Frequency of bi-allelic alternates (AA)\">\n";
+    } 
+    std::cout << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
+    for (int i = 0; i < n_samples; i++) {
+        std::cout << "\t" << bcf_hdr_int2id(hdr, BCF_DT_SAMPLE, i);
+    }
+    std::cout << "\n";
 
     while (bcf_read(fp, hdr, rec) == 0) {
         bcf_unpack(rec, BCF_UN_STR);
@@ -162,12 +170,7 @@ int main(int argc, char *argv[]) {
 		if ((mode == "dominance") & (allInfo == true)) {
 		   std::cout << ";r=" << r
 			  << ";h=" << h
-			  << ";a=" << a
-			  << ";minDosage=" << minDomDosage
-			  << ";maxDosage=" << maxDomDosage
-			  << ";DS0=" << 2*(((-h*a) - minDomDosage)/(maxDomDosage - minDomDosage))
-			  << ";DS1=" << 2*(((2*a *r) - minDomDosage)/(maxDomDosage - minDomDosage))
-			  << ";DS2=" << 2*(((-h*r) - minDomDosage)/(maxDomDosage - minDomDosage));
+			  << ";a=" << a;
 		 }
 
 		 std::cout << "\tDS"; // FORMAT column
