@@ -126,7 +126,7 @@ int main(int argc, char *argv[])
         }
 	else if (arg == "--scaling-factor" && i + 1 < argc)
         {
-            scalingFactor = std::stoi(argv[++i]);
+            scalingFactor = std::stof(argv[++i]);
         }
         else if (arg == "--no-dosage-scaling")
         {
@@ -237,6 +237,14 @@ int main(int argc, char *argv[])
         std::istringstream iss(line);
         iss >> sample >> chromosome >> gene >> configuration >> dosage >> variantInfo;
 
+	// Check if configuration is one of the expected values
+	if (configuration != "chet" && configuration != "het" && configuration != "cis" && configuration != "hom") {
+		std::cerr << "Error: 4th column '" << configuration << "' is not one of the expected values (chet, het, cis, hom) in line: " << line << std::endl;
+		gzclose(longFile);
+            	printUsage(argv[0]);
+		return 1;
+	}	
+
         // Skip processing this line if the sample is not in the set
         if (samples.find(sample) == samples.end()) continue;
 
@@ -317,6 +325,13 @@ int main(int argc, char *argv[])
         std::cout << "##INFO=<ID=r,Number=1,Type=Float,Description=\"Frequency of bi-allelic references (aa)\">\n";
         std::cout << "##INFO=<ID=h,Number=1,Type=Float,Description=\"Frequency of heterozygotes (Aa)\">\n";
         std::cout << "##INFO=<ID=a,Number=1,Type=Float,Description=\"Frequency of bi-allelic alternates (AA)\">\n";
+	if (allInfo == true) {
+		std::cout << "##INFO=<ID=minDosage,Number=1,Type=Float,Description=\"Minimum scaled dosage value for dominance mode\">\n";
+		std::cout << "##INFO=<ID=maxDosage,Number=1,Type=Float,Description=\"Maximum scaled dosage value for dominance mode\">\n";
+		std::cout << "##INFO=<ID=DS0,Number=1,Type=Float,Description=\"Scaled dosage for genotype aa in dominance mode\">\n";
+		std::cout << "##INFO=<ID=DS1,Number=1,Type=Float,Description=\"Scaled dosage for genotype Aa in dominance mode\">\n";
+		std::cout << "##INFO=<ID=DS2,Number=1,Type=Float,Description=\"Scaled dosage for genotype AA in dominance mode\">\n";
+	}
     } 
     std::cout << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
     for (const auto &sampleName : samples)
@@ -424,7 +439,7 @@ int main(int argc, char *argv[])
 				}
 		    	
 				// for debugging
-				if (scalingFactor != 0)
+				if (scalingFactor != 1.0)
 				{
 					dosage *=scalingFactor;
 				}
