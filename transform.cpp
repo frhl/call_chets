@@ -12,12 +12,12 @@
 #include <cmath>
 
 void printUsage(const char *path) {
-    std::cerr << "\nProgram: VCF Dominance Processor\n";
+    std::cerr << "\nProgram: transform genotypes to dominance encoding\n";
     std::cerr << "Usage: " << path << " --input <input.vcf.gz> --mode dominance [--output <output.vcf.gz>] [--format vcf|bcf|vcf.gz] [--scale-dosages] [--scale-dosages-factor <factor>] [--all-info]\n";
     std::cerr << "Options:\n";
     std::cerr << "  --input/-i                : Input VCF/BCF file.\n";
     std::cerr << "  --mode/-m                 : Specify mode for processing genotypes. Supports 'dominance'.\n";
-    std::cerr << "  --scale-dosages           : Enable dosage scaling. Scales dosages to be between 0 and 2 based on the calculated min and max dosages.\n";
+    std::cerr << "  --scale-dosages           : Enable dosage scaling. Scales dosages to be between 0 and 2. \n";
     std::cerr << "  --scale-dosages-factor    : Apply a scaling factor to the dosages. Default is 1.0.\n";
     std::cerr << "  --all-info                : Include all calculated information (e.g., allele frequencies, min/max dosage) in the INFO field.\n";
     std::cerr << "\nExample:\n";

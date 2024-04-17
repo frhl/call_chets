@@ -320,7 +320,7 @@ int main(int argc, char *argv[])
     std::cout << "##INFO=<ID=HOM,Number=1,Type=Integer,Description=\"Homozygous Count\">\n";
     std::cout << "##INFO=<ID=HET,Number=1,Type=Integer,Description=\"Heterozygous Count\">\n";
     std::cout << "##INFO=<ID=CIS,Number=1,Type=Integer,Description=\"Cis pseudo Count \">\n";
-    // add dominance 
+    // add dominance relevant information 
     if (mode == "dominance") {
         std::cout << "##INFO=<ID=r,Number=1,Type=Float,Description=\"Frequency of bi-allelic references (aa)\">\n";
         std::cout << "##INFO=<ID=h,Number=1,Type=Float,Description=\"Frequency of heterozygotes (Aa)\">\n";
@@ -423,8 +423,6 @@ int main(int argc, char *argv[])
 				dosage = genePair.second.at(sample);
 		    	}
 
-		    	// Apply dominance transformation if mode is selected
-		    	// Note, that these dosages are scaled to be between 0 and 2.
 			if (mode == "dominance") {
 				if (dosage == 0.0) {
 			    		dosage = -h * a;
@@ -433,12 +431,10 @@ int main(int argc, char *argv[])
 				} else if (dosage == 2.0) {
 			    		dosage = -h * r;
 				}
-				// scale dosage to be between 0 and 2
 				if (scaleDosage) {
 					dosage = 2*((dosage - minDomDosage)/(maxDomDosage - minDomDosage));
 				}
 		    	
-				// for debugging
 				if (scalingFactor != 1.0)
 				{
 					dosage *=scalingFactor;

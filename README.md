@@ -82,6 +82,8 @@ Convert the results into a VCF file with additive or recessive encoding. Genes w
   --min-ac 1 | bgzip > trio.result.vcf.gz
 ```
 
+### Notes on testing for dominance deviation
+TODO
 
 ## Haplotype and gene collapsing schemes:
 Encode a model with probability of both haplotypes being knocked out:
