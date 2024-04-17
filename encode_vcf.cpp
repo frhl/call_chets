@@ -315,6 +315,7 @@ int main(int argc, char *argv[])
     }
     std::cout << "##FORMAT=<ID=DS,Number=1,Type=Float,Description=\"Dosage\">\n";
     std::cout << "##INFO=<ID=AC,Number=1,Type=Integer,Description=\"Allele Count\">\n";
+    std::cout << "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Allele Number\">\n";
     std::cout << "##INFO=<ID=BI,Number=1,Type=Integer,Description=\"Bi-allelic Count\">\n";
     std::cout << "##INFO=<ID=CHET,Number=1,Type=Integer,Description=\"Compound heterozygous pseudo Count\">\n";
     std::cout << "##INFO=<ID=HOM,Number=1,Type=Integer,Description=\"Homozygous Count\">\n";
