@@ -80,6 +80,7 @@ int main(int argc, char *argv[])
     std::string pathInput;
     std::string pathSamples;
     std::string mode = "additive";
+    std::string suffix = "";
     int minAC = 0;
     int maxAC = INT_MAX;
     float scalingFactor = 1.0;
@@ -128,7 +129,11 @@ int main(int argc, char *argv[])
         {
             scalingFactor = std::stof(argv[++i]);
         }
-        else if (arg == "--no-dosage-scaling")
+        else if (arg == "--suffix" && i + 1 < argc)  
+        {
+            suffix = argv[++i];
+        } 
+	else if (arg == "--no-dosage-scaling")
         {
             scaleDosage = false; // Disable dosage scaling which is only relevant when mode='dominance'
         }
@@ -392,7 +397,7 @@ int main(int argc, char *argv[])
                     // get left side of VCF body
                     std::cout << geneToChromosome[genePair.first]
                               << "\t" << rowIndex
-                              << "\t" << genePair.first
+                              << "\t" << genePair.first + suffix
                               << "\tA\tB\t.\t.\t"
                               << "AC=" << currentAC
                               << ";AN=" << currentAN
