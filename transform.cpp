@@ -20,6 +20,7 @@ void printUsage(const char *path) {
     std::cerr << "  --mode/-m                 : Specify mode for processing genotypes. Supports 'dominance'.\n";
     std::cerr << "  --scale-dosages           : Enable dosage scaling. Scales dosages to be between 0 and 2. \n";
     std::cerr << "  --scale-dosages-factor    : Apply a scaling factor to the dosages. Default is 1.0.\n";
+    std::cerr << "  --set-variant-id          : Set the variant ID to chr:pos:ref:alt.\n";
     std::cerr << "  --all-info                : Include all calculated information (e.g., allele frequencies, min/max dosage) in the INFO field.\n";
     std::cerr << "\nExample:\n";
     std::cerr << "  " << path << " --input example.vcf.gz --scale-dosages | gzip > output.vcf.gz \n";
@@ -30,6 +31,7 @@ int main(int argc, char *argv[]) {
     std::string mode = "dominance";
     double scalingFactor = 1.0;
     bool scaleDosage = false;
+    bool setVariantId = false;
     bool allInfo = false;
     int countVariantsWithoutHomAlt = 0;
     const int limit = 5;
@@ -53,7 +55,10 @@ int main(int argc, char *argv[]) {
         else if (arg == "--scale-dosages") {
             scaleDosage = true;
         }
-        else if (arg == "--all-info") {
+        else if (arg == "--set-variant-id") {
+            setVariantId = true;
+        }
+	else if (arg == "--all-info") {
             allInfo = true;
         }
         else {
@@ -227,8 +232,20 @@ int main(int argc, char *argv[]) {
             double dom_dosage_Aa = 2 * a * r;
             double dom_dosage_AA = -h * r;
 
+            // Generate the variant ID based on chr:pos:ref:alt
+            std::string variantId = ".";
+            if (setVariantId) {
+                variantId = bcf_hdr_id2name(hdr, rec->rid) + std::string(":") + std::to_string(rec->pos + 1) + std::string(":") + rec->d.allele[0] + std::string(":");
+                if (rec->n_allele > 1) {
+                    variantId += rec->d.allele[1];
+                } else {
+                    variantId += ".";
+                }
+            }
+
+
             // Output VCF line for this variant
-            std::cout << bcf_hdr_id2name(hdr, rec->rid) << "\t" << (rec->pos + 1) << "\t.\t"
+            std::cout << bcf_hdr_id2name(hdr, rec->rid) << "\t" << (rec->pos + 1) << "\t" << variantId << "\t"
                       << rec->d.allele[0] << "\t"; // REF allele
             if (rec->n_allele > 1) {
                 std::cout << rec->d.allele[1]; // ALT allele
