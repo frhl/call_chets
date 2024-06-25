@@ -4,7 +4,6 @@
 #include <fstream>
 #include <map>
 #include <set>
-#include <zlib.h>
 #include <vector>
 #include <sstream>
 #include <string>
@@ -26,162 +25,111 @@ void printUsage(const char *path) {
     std::cerr << "  " << path << " --input example.vcf.gz --scale-dosages | gzip > output.vcf.gz \n";
 }
 
-int main(int argc, char *argv[]) {
-    std::string pathInput;
-    std::string mode = "dominance";
-    double scalingFactor = 1.0;
-    bool scaleDosage = false;
-    bool setVariantId = false;
-    bool allInfo = false;
-    int countVariantsWithoutHomAlt = 0;
-    const int limit = 5;
-    const double epsilon = 1e-8;
+std::vector<std::string> sortChromosomes(const std::set<std::string> &contigs) {
+    std::vector<std::string> chromosomes(contigs.begin(), contigs.end());
+    std::sort(chromosomes.begin(), chromosomes.end(), [](const std::string &a, const std::string &b) {
+        std::string a_num = a.substr(0, 3) == "chr" ? a.substr(3) : a;
+        std::string b_num = b.substr(0, 3) == "chr" ? b.substr(3) : b;
 
+        if (isdigit(a_num[0]) && isdigit(b_num[0])) {
+            return std::stoi(a_num) < std::stoi(b_num);
+        }
+        if (isdigit(a_num[0]) && !isdigit(b_num[0])) {
+            return true;
+        }
+        if (!isdigit(a_num[0]) && isdigit(b_num[0])) {
+            return false;
+        }
+        return a < b;
+    });
+    return chromosomes;
+}
+
+bool parseArguments(int argc, char *argv[], std::string &pathInput, std::string &mode, double &scalingFactor, bool &scaleDosage, bool &setVariantId, bool &allInfo) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
             printUsage(argv[0]);
-            return 0;
-        }
-        else if ((arg == "--input" || arg == "-i") && i + 1 < argc) {
+            return false;
+        } else if ((arg == "--input" || arg == "-i") && i + 1 < argc) {
             pathInput = argv[++i];
-        }
-        else if ((arg == "--mode" || arg == "-m") && i + 1 < argc) {
+        } else if ((arg == "--mode" || arg == "-m") && i + 1 < argc) {
             mode = argv[++i];
-        }
-        else if (arg == "--scale-dosages-factor" && i + 1 < argc) {
+        } else if (arg == "--scale-dosages-factor" && i + 1 < argc) {
             scalingFactor = std::stod(argv[++i]);
-        }
-        else if (arg == "--scale-dosages") {
+        } else if (arg == "--scale-dosages") {
             scaleDosage = true;
-        }
-        else if (arg == "--set-variant-id") {
+        } else if (arg == "--set-variant-id") {
             setVariantId = true;
-        }
-	else if (arg == "--all-info") {
+        } else if (arg == "--all-info") {
             allInfo = true;
-        }
-        else {
+        } else {
             std::cerr << "Error! Unknown or incomplete argument: " << arg << std::endl;
             printUsage(argv[0]);
-            return 1;
+            return false;
         }
     }
 
     if (pathInput.empty()) {
         std::cerr << "Error! --input must be provided." << std::endl;
         printUsage(argv[0]);
-        return 1;
+        return false;
     }
+    return true;
+}
 
-    // Open VCF/BCF file for first pass
-    htsFile *fp = bcf_open(pathInput.c_str(), "r");
-    if (!fp) {
-        std::cerr << "Error: Cannot open VCF/BCF file for reading: " << pathInput << std::endl;
-        return 1;
-    }
-
-    // Read the VCF header
-    bcf_hdr_t *hdr = bcf_hdr_read(fp);
-    if (!hdr) {
-        std::cerr << "Error: Cannot read header from VCF/BCF file." << std::endl;
-        bcf_close(fp);
-        return 1;
-    }
-
+void calculateGlobalDosages(htsFile *fp, bcf_hdr_t *hdr, double &globalMinDomDosage, double &globalMaxDomDosage, int n_samples, std::set<std::string> &chromosomes) {
     bcf1_t *rec = bcf_init();
-    if (!rec) {
-        std::cerr << "Error: Cannot initialize BCF record." << std::endl;
-        bcf_hdr_destroy(hdr);
-        bcf_close(fp);
-        return 1;
-    }
+    int *gt_arr = NULL, ngt_arr = 0;
 
-    int *gt_arr = NULL, ngt_arr = 0; // Genotype array
-    int n_samples = bcf_hdr_nsamples(hdr); // Number of samples in the VCF file
-
-    // Variables for global min and max dominance dosages
-    double globalMinDomDosage = std::numeric_limits<double>::max();
-    double globalMaxDomDosage = std::numeric_limits<double>::lowest();
-
-    // First pass: Calculate global min and max dominance dosages
     while (bcf_read(fp, hdr, rec) == 0) {
+        chromosomes.insert(bcf_hdr_id2name(hdr, rec->rid));
         bcf_unpack(rec, BCF_UN_STR);
         int ngt = bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr);
-        if (ngt <= 0) continue; // Skip if no genotype information
+        if (ngt <= 0) continue;
 
-        // Calculate AC, AN, aa_count, Aa_count, AA_count
         int aa_count = 0, Aa_count = 0, AA_count = 0;
         for (int i = 0; i < n_samples; ++i) {
-            // Point to the current sample
             int *gt_ptr = gt_arr + i * 2;
-
-            // Check for missing genotype data
             if (bcf_gt_is_missing(gt_ptr[0]) || bcf_gt_is_missing(gt_ptr[1])) continue;
 
             int allele1 = bcf_gt_allele(gt_ptr[0]);
             int allele2 = bcf_gt_allele(gt_ptr[1]);
-
-            // Count hom alt, het, hom ref
             if (allele1 == 0 && allele2 == 0) aa_count++;
             else if (allele1 != allele2) Aa_count++;
             else if (allele1 > 0 && allele2 > 0) AA_count++;
         }
 
-        // Only proceed with encoding if at least one hom_alt is present
         if (AA_count > 0) {
-            // Calculate allele frequencies based on genotype counts
             double r = static_cast<double>(aa_count) / n_samples;
             double h = static_cast<double>(Aa_count) / n_samples;
             double a = static_cast<double>(AA_count) / n_samples;
 
-            // Calculate dominance dosages
             double dom_dosage_aa = -h * a;
             double dom_dosage_Aa = 2 * a * r;
             double dom_dosage_AA = -h * r;
 
-            // Update global min and max dominance dosage values
             globalMinDomDosage = std::min({globalMinDomDosage, dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
             globalMaxDomDosage = std::max({globalMaxDomDosage, dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
         }
     }
 
-    // Close the file from the first pass
-    bcf_close(fp);
+    free(gt_arr);
+    bcf_destroy(rec);
+}
 
-    // Open VCF/BCF file for second pass
-    fp = bcf_open(pathInput.c_str(), "r");
-    if (!fp) {
-        std::cerr << "Error: Cannot open VCF/BCF file for reading: " << pathInput << std::endl;
-        return 1;
-    }
+void printHeader(const bcf_hdr_t *hdr, const std::vector<std::string> &sortedContigs, const std::string &mode, double globalMinDomDosage, double globalMaxDomDosage, bool allInfo, bool scaleDosage) {
+    int n_samples = bcf_hdr_nsamples(hdr);
 
-    // Read the VCF header
-    hdr = bcf_hdr_read(fp);
-    if (!hdr) {
-        std::cerr << "Error: Cannot read header from VCF/BCF file." << std::endl;
-        bcf_close(fp);
-        return 1;
-    }
-
-    rec = bcf_init();
-    if (!rec) {
-        std::cerr << "Error: Cannot initialize BCF record." << std::endl;
-        bcf_hdr_destroy(hdr);
-        bcf_close(fp);
-        return 1;
-    }
-
-    gt_arr = NULL;
-    ngt_arr = 0; // Genotype array
-    n_samples = bcf_hdr_nsamples(hdr); // Number of samples in the VCF file
-
-    // Print VCF header
     std::cout << "##fileformat=VCFv4.2\n";
+    // output chromosomes
+    for (const auto& chr : sortedContigs) {
+        std::cout << "##contig=<ID=" << chr << ">\n";
+    }
     std::cout << "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count in genotypes\">\n";
     std::cout << "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Total number of alleles in called genotypes\">\n";
     std::cout << "##FORMAT=<ID=DS,Number=1,Type=Float,Description=\"Dosage of the alternate allele based on dominance model\">\n";
-    if (allInfo == true) {
+    if (allInfo) {
         std::cout << "##INFO=<ID=r,Number=1,Type=Float,Description=\"Frequency of bi-allelic references (aa)\">\n";
         std::cout << "##INFO=<ID=h,Number=1,Type=Float,Description=\"Frequency of heterozygotes (Aa)\">\n";
         std::cout << "##INFO=<ID=a,Number=1,Type=Float,Description=\"Frequency of bi-allelic alternates (AA)\">\n";
@@ -191,48 +139,46 @@ int main(int argc, char *argv[]) {
         std::cout << "##INFO=<ID=globalMaxDomDosage,Number=1,Type=Float,Description=\"Global maximum dominance dosage\">\n";
     }
     std::cout << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
-    for (int i = 0; i < n_samples; i++) {
+    for (int i = 0; i < n_samples; ++i) {
         std::cout << "\t" << bcf_hdr_int2id(hdr, BCF_DT_SAMPLE, i);
     }
     std::cout << "\n";
+}
 
-    // Second pass: Scale and print dosages
+void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double globalMinDomDosage, double globalMaxDomDosage, bool allInfo, bool scaleDosage, bool setVariantId, double scalingFactor) {
+    bcf1_t *rec = bcf_init();
+    int *gt_arr = NULL, ngt_arr = 0;
+    int n_samples = bcf_hdr_nsamples(hdr);
+    const double epsilon = 1e-8;
+    int countVariantsWithoutHomAlt = 0;
+    const int limit = 5;
+
     while (bcf_read(fp, hdr, rec) == 0) {
         bcf_unpack(rec, BCF_UN_STR);
         int ngt = bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr);
-        if (ngt <= 0) continue; // Skip if no genotype information
+        if (ngt <= 0) continue;
 
-        // Calculate AC, AN, aa_count, Aa_count, AA_count
         int aa_count = 0, Aa_count = 0, AA_count = 0;
         for (int i = 0; i < n_samples; ++i) {
-            // Point to the current sample
             int *gt_ptr = gt_arr + i * 2;
-
-            // Check for missing genotype data
             if (bcf_gt_is_missing(gt_ptr[0]) || bcf_gt_is_missing(gt_ptr[1])) continue;
 
             int allele1 = bcf_gt_allele(gt_ptr[0]);
             int allele2 = bcf_gt_allele(gt_ptr[1]);
-
-            // Count hom alt, het, hom ref
             if (allele1 == 0 && allele2 == 0) aa_count++;
             else if (allele1 != allele2) Aa_count++;
             else if (allele1 > 0 && allele2 > 0) AA_count++;
         }
 
-        // Only proceed with encoding if at least one hom_alt is present
         if (AA_count > 0) {
-            // Calculate allele frequencies based on genotype counts
             double r = static_cast<double>(aa_count) / n_samples;
             double h = static_cast<double>(Aa_count) / n_samples;
             double a = static_cast<double>(AA_count) / n_samples;
 
-            // Calculate dominance dosages
             double dom_dosage_aa = -h * a;
             double dom_dosage_Aa = 2 * a * r;
             double dom_dosage_AA = -h * r;
 
-            // Generate the variant ID based on chr:pos:ref:alt
             std::string variantId = ".";
             if (setVariantId) {
                 variantId = bcf_hdr_id2name(hdr, rec->rid) + std::string(":") + std::to_string(rec->pos + 1) + std::string(":") + rec->d.allele[0] + std::string(":");
@@ -243,32 +189,29 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-
-            // Output VCF line for this variant
             std::cout << bcf_hdr_id2name(hdr, rec->rid) << "\t" << (rec->pos + 1) << "\t" << variantId << "\t"
-                      << rec->d.allele[0] << "\t"; // REF allele
+                      << rec->d.allele[0] << "\t";
             if (rec->n_allele > 1) {
-                std::cout << rec->d.allele[1]; // ALT allele
+                std::cout << rec->d.allele[1];
             } else {
                 std::cout << ".";
             }
 
-            std::cout << "\t.\t.\t"; // QUAL and FILTER columns
-            std::cout << "AC=" << Aa_count + 2 * AA_count << ";AN=" << 2 * n_samples; // INFO column
+            std::cout << "\t.\t.\t";
+            std::cout << "AC=" << Aa_count + 2 * AA_count << ";AN=" << 2 * n_samples;
             if (scaleDosage) {
                 std::cout << ";globalMinDomDosage=" << globalMinDomDosage
                           << ";globalMaxDomDosage=" << globalMaxDomDosage;
             }
 
-            if ((mode == "dominance") & (allInfo == true)) {
+            if (allInfo) {
                 std::cout << ";r=" << r
                           << ";h=" << h
                           << ";a=" << a;
             }
 
-            std::cout << "\tDS"; // FORMAT column
+            std::cout << "\tDS";
 
-            // Output transformed genotypes based on dominance model
             for (int i = 0; i < n_samples; ++i) {
                 int *gt_ptr = gt_arr + i * 2;
                 double dosage = 0.0;
@@ -285,10 +228,8 @@ int main(int argc, char *argv[]) {
                         dosage = -h * r;
                     }
 
-                    // Scale dosage to be between 0 and 2 using global min and max values
                     if (scaleDosage) {
                         dosage = 2 * ((dosage - globalMinDomDosage) / (globalMaxDomDosage - globalMinDomDosage));
-                        // Ensure dosage is within [0, 2] and check for errors
                         if (dosage < 0) {
                             dosage = 0;
                         } else if (dosage > 2 + epsilon) {
@@ -297,7 +238,6 @@ int main(int argc, char *argv[]) {
                         }
                     }
 
-                    // Apply scaling factor
                     if (scalingFactor != 0) {
                         dosage *= scalingFactor;
                     }
@@ -311,23 +251,68 @@ int main(int argc, char *argv[]) {
             countVariantsWithoutHomAlt++;
             if (countVariantsWithoutHomAlt <= limit) {
                 std::cerr << "variant '" << bcf_hdr_id2name(hdr, rec->rid) << ":" << (rec->pos + 1) << ":"
-                          << rec->d.allele[0] << ":" << (rec->n_allele > 1 ? rec->d.allele[1] : ".") << "";
-                std::cerr << "' has no homozygous alternate alleles. Skipping..\n";
+                          << rec->d.allele[0] << ":" << (rec->n_allele > 1 ? rec->d.allele[1] : ".") << "'";
+                std::cerr << " has no homozygous alternate alleles. Skipping..\n";
             }
         }
     }
     std::cerr << "Note: Total discarded variants without homozygous alternate alleles: " << countVariantsWithoutHomAlt << std::endl;
 
-    // Cleanup
     free(gt_arr);
     bcf_destroy(rec);
+}
+
+int main(int argc, char *argv[]) {
+    std::string pathInput;
+    std::string mode = "dominance";
+    double scalingFactor = 1.0;
+    bool scaleDosage = false;
+    bool setVariantId = false;
+    bool allInfo = false;
+
+    if (!parseArguments(argc, argv, pathInput, mode, scalingFactor, scaleDosage, setVariantId, allInfo)) {
+        return 1;
+    }
+
+    htsFile *fp = bcf_open(pathInput.c_str(), "r");
+    if (!fp) {
+        std::cerr << "Error: Cannot open VCF/BCF file for reading: " << pathInput << std::endl;
+        return 1;
+    }
+
+    bcf_hdr_t *hdr = bcf_hdr_read(fp);
+    if (!hdr) {
+        std::cerr << "Error: Cannot read header from VCF/BCF file." << std::endl;
+        bcf_close(fp);
+        return 1;
+    }
+
+    int n_samples = bcf_hdr_nsamples(hdr);
+
+    double globalMinDomDosage = std::numeric_limits<double>::max();
+    double globalMaxDomDosage = std::numeric_limits<double>::lowest();
+    std::set<std::string> chromosomes;
+    calculateGlobalDosages(fp, hdr, globalMinDomDosage, globalMaxDomDosage, n_samples, chromosomes);
+
+    std::vector<std::string> sortedContigs = sortChromosomes(chromosomes);
+    bcf_close(fp);
+
+    // Reopen file for actual processing
+    fp = bcf_open(pathInput.c_str(), "r");
+    if (!fp) {
+        std::cerr << "Error: Cannot open VCF/BCF file for reading: " << pathInput << std::endl;
+        return 1;
+    }
+
+    hdr = bcf_hdr_read(fp);
+
+    printHeader(hdr, sortedContigs, mode, globalMinDomDosage, globalMaxDomDosage, allInfo, scaleDosage);
+
+    processVcfFile(fp, hdr, mode, globalMinDomDosage, globalMaxDomDosage, allInfo, scaleDosage, setVariantId, scalingFactor);
+
     bcf_hdr_destroy(hdr);
     bcf_close(fp);
 
     return 0;
 }
-
-
-
-
 
