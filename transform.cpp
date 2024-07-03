@@ -13,7 +13,7 @@
 
 void printUsage(const char *path) {
     std::cerr << "\nProgram: transform genotypes to dominance encoding\n";
-    std::cerr << "Usage: " << path << " --input <input.vcf.gz> --mode dominance [--output <output.vcf.gz>] [--format vcf|bcf|vcf.gz] [--scale-dosages] [--scale-dosages-factor <factor>] [--all-info]\n";
+    std::cerr << "Usage: " << path << " --input <input.vcf.gz> --mode dominance [--output <output.vcf.gz>] [--format vcf|bcf|vcf.gz] [--scale-dosages] [--scale-dosages-factor <factor>] [--all-info] [--gene-map <Map File>]\n";
     std::cerr << "Options:\n";
     std::cerr << "  --input/-i                : Input VCF/BCF file.\n";
     std::cerr << "  --mode/-m                 : Specify mode for processing genotypes. Supports 'dominance'.\n";
@@ -21,6 +21,7 @@ void printUsage(const char *path) {
     std::cerr << "  --scale-dosages-factor    : Apply a scaling factor to the dosages. Default is 1.0.\n";
     std::cerr << "  --set-variant-id          : Set the variant ID to chr:pos:ref:alt.\n";
     std::cerr << "  --all-info                : Include all calculated information (e.g., allele frequencies, min/max dosage) in the INFO field.\n";
+    std::cerr << "  --gene-map/-g             : File mapping variants to genes. It should have two columns with a header in the format: variant, gene\n";
     std::cerr << "\nExample:\n";
     std::cerr << "  " << path << " --input example.vcf.gz --scale-dosages | gzip > output.vcf.gz \n";
 }
@@ -45,7 +46,7 @@ std::vector<std::string> sortChromosomes(const std::set<std::string> &contigs) {
     return chromosomes;
 }
 
-bool parseArguments(int argc, char *argv[], std::string &pathInput, std::string &mode, double &scalingFactor, bool &scaleDosage, bool &setVariantId, bool &allInfo) {
+bool parseArguments(int argc, char *argv[], std::string &pathInput, std::string &mode, double &scalingFactor, bool &scaleDosage, bool &setVariantId, bool &allInfo, std::string &geneMapPath) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
@@ -63,6 +64,8 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput, std::string 
             setVariantId = true;
         } else if (arg == "--all-info") {
             allInfo = true;
+        } else if ((arg == "--gene-map" || arg == "-g") && i + 1 < argc) {
+            geneMapPath = argv[++i];
         } else {
             std::cerr << "Error! Unknown or incomplete argument: " << arg << std::endl;
             printUsage(argv[0]);
@@ -78,7 +81,27 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput, std::string 
     return true;
 }
 
-void calculateGlobalDosages(htsFile *fp, bcf_hdr_t *hdr, double &globalMinDomDosage, double &globalMaxDomDosage, int n_samples, std::set<std::string> &chromosomes) {
+std::map<std::string, std::string> readGeneMap(const std::string &geneMapPath) {
+    std::map<std::string, std::string> geneMap;
+    std::ifstream infile(geneMapPath);
+    if (!infile) {
+        std::cerr << "Error: Cannot open gene map file for reading: " << geneMapPath << std::endl;
+        exit(1);
+    }
+
+    std::string line, variant, gene;
+    std::getline(infile, line); // skip header
+    while (std::getline(infile, line)) {
+        std::istringstream iss(line);
+        if (!(iss >> variant >> gene)) { break; }
+        geneMap[variant] = gene;
+    }
+
+    infile.close();
+    return geneMap;
+}
+
+void calculateGlobalAndGeneDosages(htsFile *fp, bcf_hdr_t *hdr, double &globalMinDomDosage, double &globalMaxDomDosage, int n_samples, std::set<std::string> &chromosomes, const std::map<std::string, std::string> &geneMap, std::map<std::string, std::pair<double, double>> &geneDosages) {
     bcf1_t *rec = bcf_init();
     int *gt_arr = NULL, ngt_arr = 0;
 
@@ -111,6 +134,15 @@ void calculateGlobalDosages(htsFile *fp, bcf_hdr_t *hdr, double &globalMinDomDos
 
             globalMinDomDosage = std::min({globalMinDomDosage, dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
             globalMaxDomDosage = std::max({globalMaxDomDosage, dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+
+            std::string variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" + std::to_string(rec->pos + 1) + ":" + rec->d.allele[0] + ":" + rec->d.allele[1];
+            if (geneMap.find(variantId) != geneMap.end()) {
+                std::string gene = geneMap.at(variantId);
+                double &geneMinDosage = geneDosages[gene].first;
+                double &geneMaxDosage = geneDosages[gene].second;
+                geneMinDosage = std::min({geneMinDosage, dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+                geneMaxDosage = std::max({geneMaxDosage, dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+            }
         }
     }
 
@@ -118,7 +150,7 @@ void calculateGlobalDosages(htsFile *fp, bcf_hdr_t *hdr, double &globalMinDomDos
     bcf_destroy(rec);
 }
 
-void printHeader(const bcf_hdr_t *hdr, const std::vector<std::string> &sortedContigs, const std::string &mode, double globalMinDomDosage, double globalMaxDomDosage, bool allInfo, bool scaleDosage) {
+void printHeader(const bcf_hdr_t *hdr, const std::vector<std::string> &sortedContigs, const std::string &mode, double globalMinDomDosage, double globalMaxDomDosage, bool allInfo, bool scaleDosage, bool geneMapSpecified) {
     int n_samples = bcf_hdr_nsamples(hdr);
 
     std::cout << "##fileformat=VCFv4.2\n";
@@ -135,8 +167,14 @@ void printHeader(const bcf_hdr_t *hdr, const std::vector<std::string> &sortedCon
         std::cout << "##INFO=<ID=a,Number=1,Type=Float,Description=\"Frequency of bi-allelic alternates (AA)\">\n";
     }
     if (scaleDosage) {
-        std::cout << "##INFO=<ID=globalMinDomDosage,Number=1,Type=Float,Description=\"Global minimum dominance dosage\">\n";
-        std::cout << "##INFO=<ID=globalMaxDomDosage,Number=1,Type=Float,Description=\"Global maximum dominance dosage\">\n";
+        if (geneMapSpecified) {
+            std::cout << "##INFO=<ID=localMinDomDosage,Number=1,Type=Float,Description=\"Local minimum dominance dosage\">\n";
+            std::cout << "##INFO=<ID=localMaxDomDosage,Number=1,Type=Float,Description=\"Local maximum dominance dosage\">\n";
+            std::cout << "##INFO=<ID=group,Number=1,Type=String,Description=\"Group (gene) used for local scaling\">\n";
+        } else {
+            std::cout << "##INFO=<ID=globalMinDomDosage,Number=1,Type=Float,Description=\"Global minimum dominance dosage\">\n";
+            std::cout << "##INFO=<ID=globalMaxDomDosage,Number=1,Type=Float,Description=\"Global maximum dominance dosage\">\n";
+        }
     }
     std::cout << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
     for (int i = 0; i < n_samples; ++i) {
@@ -145,13 +183,15 @@ void printHeader(const bcf_hdr_t *hdr, const std::vector<std::string> &sortedCon
     std::cout << "\n";
 }
 
-void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double globalMinDomDosage, double globalMaxDomDosage, bool allInfo, bool scaleDosage, bool setVariantId, double scalingFactor) {
+void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double globalMinDomDosage, double globalMaxDomDosage, bool allInfo, bool scaleDosage, bool setVariantId, double scalingFactor, const std::map<std::string, std::string> &geneMap, const std::map<std::string, std::pair<double, double>> &geneDosages) {
     bcf1_t *rec = bcf_init();
     int *gt_arr = NULL, ngt_arr = 0;
     int n_samples = bcf_hdr_nsamples(hdr);
     const double epsilon = 1e-8;
     int countVariantsWithoutHomAlt = 0;
     const int limit = 5;
+    int discardedVariantsCount = 0;
+    const int warningLimit = 5;
 
     while (bcf_read(fp, hdr, rec) == 0) {
         bcf_unpack(rec, BCF_UN_STR);
@@ -179,14 +219,28 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
             double dom_dosage_Aa = 2 * a * r;
             double dom_dosage_AA = -h * r;
 
-            std::string variantId = ".";
-            if (setVariantId) {
-                variantId = bcf_hdr_id2name(hdr, rec->rid) + std::string(":") + std::to_string(rec->pos + 1) + std::string(":") + rec->d.allele[0] + std::string(":");
-                if (rec->n_allele > 1) {
-                    variantId += rec->d.allele[1];
-                } else {
-                    variantId += ".";
+            std::string variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" + std::to_string(rec->pos + 1) + ":" + rec->d.allele[0] + ":" + rec->d.allele[1];
+            if (!geneMap.empty() && geneMap.find(variantId) == geneMap.end()) {
+                if (discardedVariantsCount < warningLimit) {
+                    std::cerr << "Warning: Variant '" << variantId << "' not found in gene map. Discarding.\n";
                 }
+                discardedVariantsCount++;
+                continue;
+            }
+
+            double localMinDomDosage = globalMinDomDosage;
+            double localMaxDomDosage = globalMaxDomDosage;
+            std::string group;
+
+            if (!geneMap.empty() && geneMap.find(variantId) != geneMap.end()) {
+                std::string gene = geneMap.at(variantId);
+                localMinDomDosage = geneDosages.at(gene).first;
+                localMaxDomDosage = geneDosages.at(gene).second;
+                group = gene;
+            }
+
+            if (setVariantId) {
+                variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" + std::to_string(rec->pos + 1) + ":" + rec->d.allele[0] + ":" + (rec->n_allele > 1 ? rec->d.allele[1] : ".");
             }
 
             std::cout << bcf_hdr_id2name(hdr, rec->rid) << "\t" << (rec->pos + 1) << "\t" << variantId << "\t"
@@ -200,8 +254,14 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
             std::cout << "\t.\t.\t";
             std::cout << "AC=" << Aa_count + 2 * AA_count << ";AN=" << 2 * n_samples;
             if (scaleDosage) {
-                std::cout << ";globalMinDomDosage=" << globalMinDomDosage
-                          << ";globalMaxDomDosage=" << globalMaxDomDosage;
+                if (!geneMap.empty()) {
+                    std::cout << ";localMinDomDosage=" << localMinDomDosage
+                              << ";localMaxDomDosage=" << localMaxDomDosage
+                              << ";group=" << group;
+                } else {
+                    std::cout << ";globalMinDomDosage=" << globalMinDomDosage
+                              << ";globalMaxDomDosage=" << globalMaxDomDosage;
+                }
             }
 
             if (allInfo) {
@@ -229,7 +289,7 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
                     }
 
                     if (scaleDosage) {
-                        dosage = 2 * ((dosage - globalMinDomDosage) / (globalMaxDomDosage - globalMinDomDosage));
+                        dosage = 2 * ((dosage - localMinDomDosage) / (localMaxDomDosage - localMinDomDosage));
                         if (dosage < 0) {
                             dosage = 0;
                         } else if (dosage > 2 + epsilon) {
@@ -256,6 +316,11 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
             }
         }
     }
+
+    if (discardedVariantsCount > warningLimit) {
+        std::cerr << "Note: Total number of variants discarded due to not being present in the gene map: " << discardedVariantsCount << std::endl;
+    }
+
     std::cerr << "Note: Total discarded variants without homozygous alternate alleles: " << countVariantsWithoutHomAlt << std::endl;
 
     free(gt_arr);
@@ -269,8 +334,9 @@ int main(int argc, char *argv[]) {
     bool scaleDosage = false;
     bool setVariantId = false;
     bool allInfo = false;
+    std::string geneMapPath;
 
-    if (!parseArguments(argc, argv, pathInput, mode, scalingFactor, scaleDosage, setVariantId, allInfo)) {
+    if (!parseArguments(argc, argv, pathInput, mode, scalingFactor, scaleDosage, setVariantId, allInfo, geneMapPath)) {
         return 1;
     }
 
@@ -292,7 +358,17 @@ int main(int argc, char *argv[]) {
     double globalMinDomDosage = std::numeric_limits<double>::max();
     double globalMaxDomDosage = std::numeric_limits<double>::lowest();
     std::set<std::string> chromosomes;
-    calculateGlobalDosages(fp, hdr, globalMinDomDosage, globalMaxDomDosage, n_samples, chromosomes);
+    std::map<std::string, std::string> geneMap;
+    std::map<std::string, std::pair<double, double>> geneDosages;
+
+    if (!geneMapPath.empty()) {
+        geneMap = readGeneMap(geneMapPath);
+        for (const auto &pair : geneMap) {
+            geneDosages[pair.second] = {std::numeric_limits<double>::max(), std::numeric_limits<double>::lowest()};
+        }
+    }
+
+    calculateGlobalAndGeneDosages(fp, hdr, globalMinDomDosage, globalMaxDomDosage, n_samples, chromosomes, geneMap, geneDosages);
 
     std::vector<std::string> sortedContigs = sortChromosomes(chromosomes);
     bcf_close(fp);
@@ -306,9 +382,9 @@ int main(int argc, char *argv[]) {
 
     hdr = bcf_hdr_read(fp);
 
-    printHeader(hdr, sortedContigs, mode, globalMinDomDosage, globalMaxDomDosage, allInfo, scaleDosage);
+    printHeader(hdr, sortedContigs, mode, globalMinDomDosage, globalMaxDomDosage, allInfo, scaleDosage, !geneMap.empty());
 
-    processVcfFile(fp, hdr, mode, globalMinDomDosage, globalMaxDomDosage, allInfo, scaleDosage, setVariantId, scalingFactor);
+    processVcfFile(fp, hdr, mode, globalMinDomDosage, globalMaxDomDosage, allInfo, scaleDosage, setVariantId, scalingFactor, geneMap, geneDosages);
 
     bcf_hdr_destroy(hdr);
     bcf_close(fp);
