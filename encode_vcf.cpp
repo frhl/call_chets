@@ -27,7 +27,7 @@ void printUsage(const char *path)
 {
     std::string version = getVersion();
     std::cerr << "\nProgram: chet tools v" << version << "\n";
-    std::cerr << "\nUsage: " << path 
+    std::cerr << "\nUsage: " << path
               << " --input <input> --samples <samples>"
               << " --mode [<additive|recessive|dominance|001|012|010|011>]\n";
     std::cerr << "\nDescription:";
@@ -44,6 +44,8 @@ void printUsage(const char *path)
     std::cerr << "\n  --min-ac     : Filters to genes with sum of DS >= argument.";
     std::cerr << "\n  --max-ac     : Filters to genes with sum of DS < argument.\n";
     std::cerr << "\n  --all-info   : Populate INFO column with all details (relevant when mode='dominance').\n";
+    std::cerr << "\n  --global-dom-dosage : Use global min/max dominance dosage for scaling. \n";
+    std::cerr << "\n  --no-dosage-scaling : Disables any scaling of dosages from 0 to 2. \n";
     std::cerr << "\nExample:";
     std::cerr << "\n  ./encode_vcf called_chets.txt.gz samples.txt additive | bgzip > out.vcf.gz\n\n";
 }
@@ -84,8 +86,9 @@ int main(int argc, char *argv[])
     int minAC = 0;
     int maxAC = INT_MAX;
     float scalingFactor = 1.0;
-    bool scaleDosage = true; 
-    bool allInfo = false; 
+    bool scaleDosage = true;
+    bool allInfo = false;
+    bool globalDomDosage = false;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -107,7 +110,11 @@ int main(int argc, char *argv[])
         {
             mode = argv[++i];
         }
-        else if (arg == "--min-ac" && i + 1 < argc)
+	else if (arg == "--global-dom-dosage")
+	{
+		    globalDomDosage = true;
+	}
+	else if (arg == "--min-ac" && i + 1 < argc)
         {
             minAC = std::stoi(argv[++i]);
             if (minAC < 0)
@@ -129,10 +136,10 @@ int main(int argc, char *argv[])
         {
             scalingFactor = std::stof(argv[++i]);
         }
-        else if (arg == "--suffix" && i + 1 < argc)  
+        else if (arg == "--suffix" && i + 1 < argc)
         {
             suffix = argv[++i];
-        } 
+        }
 	else if (arg == "--no-dosage-scaling")
         {
             scaleDosage = false; // Disable dosage scaling which is only relevant when mode='dominance'
@@ -170,7 +177,7 @@ int main(int argc, char *argv[])
         std::cerr << "Error: Cannot open <samples> file for reading: " << pathSamples << std::endl;
         return 1;
     }
-    
+
     // normalise mode input
     if (mode == "recessive") mode = "001";
     else if (mode == "additive") mode = "012";
@@ -248,7 +255,7 @@ int main(int argc, char *argv[])
 		gzclose(longFile);
             	printUsage(argv[0]);
 		return 1;
-	}	
+	}
 
         // Skip processing this line if the sample is not in the set
         if (samples.find(sample) == samples.end()) continue;
@@ -307,6 +314,33 @@ int main(int argc, char *argv[])
 
     gzclose(longFile);
 
+    // compute global minimum or maximum dominance scaling
+    // which will be applied when the global-dom-dosage arugment is on
+    float globalMinDomDosage = std::numeric_limits<float>::max();
+    float globalMaxDomDosage = std::numeric_limits<float>::min();
+
+    if (globalDomDosage && mode == "dominance") {
+
+        for (const auto& gene : geneAC) {
+            int currentAN = samples.size() * 2;
+            float aa_count = static_cast<float>((currentAN / 2) - (geneCis[gene.first] + geneHet[gene.first] + geneBI[gene.first]));
+            float Aa_count = static_cast<float>(geneHet[gene.first] + geneCis[gene.first]);
+            float AA_count = static_cast<float>(geneBI[gene.first]);
+
+            float r = aa_count / (currentAN / 2);
+            float h = Aa_count / (currentAN / 2);
+            float a = AA_count / (currentAN / 2);
+
+            float dom_dosage_aa = -h * a;
+            float dom_dosage_Aa = 2 * a * r;
+            float dom_dosage_AA = -h * r;
+
+            globalMinDomDosage = std::min({globalMinDomDosage, dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+            globalMaxDomDosage = std::max({globalMaxDomDosage, dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+        }
+
+    }
+
     // sort chromosomes
     std::vector<std::string> sortedContigs = sortChromosomes(contigs);
 
@@ -326,7 +360,7 @@ int main(int argc, char *argv[])
     std::cout << "##INFO=<ID=HOM,Number=1,Type=Integer,Description=\"Homozygous Count\">\n";
     std::cout << "##INFO=<ID=HET,Number=1,Type=Integer,Description=\"Heterozygous Count\">\n";
     std::cout << "##INFO=<ID=CIS,Number=1,Type=Integer,Description=\"Cis pseudo Count \">\n";
-    // add dominance relevant information 
+    // add dominance relevant information
     if (mode == "dominance") {
         std::cout << "##INFO=<ID=r,Number=1,Type=Float,Description=\"Frequency of bi-allelic references (aa)\">\n";
         std::cout << "##INFO=<ID=h,Number=1,Type=Float,Description=\"Frequency of heterozygotes (Aa)\">\n";
@@ -338,7 +372,7 @@ int main(int argc, char *argv[])
 		std::cout << "##INFO=<ID=DS1,Number=1,Type=Float,Description=\"Scaled dosage for genotype Aa in dominance mode\">\n";
 		std::cout << "##INFO=<ID=DS2,Number=1,Type=Float,Description=\"Scaled dosage for genotype AA in dominance mode\">\n";
 	}
-    } 
+    }
     std::cout << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
     for (const auto &sampleName : samples)
     {
@@ -363,7 +397,7 @@ int main(int argc, char *argv[])
                 int currentHet = geneHet[genePair.first];
                 int currentCis = geneCis[genePair.first];
 
-		// Skip processing this gene/pseudo-variant if 
+		// Skip processing this gene/pseudo-variant if
 		// in dominance mode and no homozygotes present
 		if (mode == "dominance" && currentBI == 0) {
 			continue;
@@ -373,8 +407,8 @@ int main(int argc, char *argv[])
 		float aa_count = static_cast<float>((currentAN/2) - (currentCis + currentHet + currentBI));
 		float Aa_count = static_cast<float>(currentHet + currentCis);
 		float AA_count = static_cast<float>(currentBI);
-	
-		// rename accordinly	
+
+		// rename accordinly
 		float r = static_cast<float>(aa_count / (currentAN/2));
 		float h = static_cast<float>(Aa_count / (currentAN/2));
 		float a = static_cast<float>(AA_count / (currentAN/2));
@@ -389,6 +423,12 @@ int main(int argc, char *argv[])
 		// Find min and max dosage values for scaling
 		float minDomDosage = std::min({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
 		float maxDomDosage = std::max({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+	
+		// overwrite dominance dosage 
+	        if (globalDomDosage && mode == "dominance") {
+		    minDomDosage = globalMinDomDosage;
+		    maxDomDosage = globalMaxDomDosage;
+		}
 
 		// only output variants that fit our criteria
                 if (currentAC >= minAC && currentAC < maxAC)
@@ -440,12 +480,12 @@ int main(int argc, char *argv[])
 				if (scaleDosage) {
 					dosage = 2*((dosage - minDomDosage)/(maxDomDosage - minDomDosage));
 				}
-		    	
+
 				if (scalingFactor != 1.0)
 				{
 					dosage *=scalingFactor;
 				}
-			}		
+			}
 			std::cout << dosage;
                     }
                     std::cout << std::endl;
