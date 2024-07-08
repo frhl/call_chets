@@ -46,6 +46,8 @@ void printUsage(const char *path)
     std::cerr << "\n  --all-info   : Populate INFO column with all details (relevant when mode='dominance').\n";
     std::cerr << "\n  --global-dom-dosage : Use global min/max dominance dosage for scaling. \n";
     std::cerr << "\n  --no-dosage-scaling : Disables any scaling of dosages from 0 to 2. \n";
+    std::cerr << "\n  --force-chr-out-name <chr_name> : Forces the output chromosome to be the specified";
+    std::cerr << "\n                 name regardless of the gene's actual chromosome.";
     std::cerr << "\nExample:";
     std::cerr << "\n  ./encode_vcf called_chets.txt.gz samples.txt additive | bgzip > out.vcf.gz\n\n";
 }
@@ -85,6 +87,7 @@ int main(int argc, char *argv[])
     std::string suffix = "";
     int minAC = 0;
     int maxAC = INT_MAX;
+    std::string forcedChromosomeName;
     float scalingFactor = 1.0;
     bool scaleDosage = true;
     bool allInfo = false;
@@ -112,7 +115,11 @@ int main(int argc, char *argv[])
         }
 	else if (arg == "--global-dom-dosage")
 	{
-		    globalDomDosage = true;
+		globalDomDosage = true;
+	}
+	else if (arg == "--force-chr-out-name" && i + 1 < argc)
+	{
+		forcedChromosomeName = argv[++i];
 	}
 	else if (arg == "--min-ac" && i + 1 < argc)
         {
@@ -348,10 +355,17 @@ int main(int argc, char *argv[])
     std::cout << "##fileformat=VCFv4.2\n";
     std::cout << "##EncodingMode=" << mode << "\n";  // Add this lin
     std::cout << "##FILTER=<ID=PASS,Description=\"All filters passed\">\n";
-    for (const auto &chr : sortedContigs)
-    {
-        std::cout << "##contig=<ID=" << chr << ">\n";
-    }
+    
+    // Check if forced chromosome name is provided and add it to the header
+    if (!forcedChromosomeName.empty()) {
+	    std::cout << "##contig=<ID=" << forcedChromosomeName << ">\n";
+    } else {
+    // If no forced chromosome name, add all known contigs
+    for (const auto &chr : sortedContigs) {
+	    std::cout << "##contig=<ID=" << chr << ">\n";
+	}
+    } 
+	    
     std::cout << "##FORMAT=<ID=DS,Number=1,Type=Float,Description=\"Dosage\">\n";
     std::cout << "##INFO=<ID=AC,Number=1,Type=Integer,Description=\"Allele Count\">\n";
     std::cout << "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Allele Number\">\n";
@@ -434,8 +448,8 @@ int main(int argc, char *argv[])
                 if (currentAC >= minAC && currentAC < maxAC)
                 {
 
-                    // get left side of VCF body
-                    std::cout << geneToChromosome[genePair.first]
+                   // get left side of VCF body and force chromosome name if the --force-chr-name is given
+                   std::cout << (forcedChromosomeName.empty() ? geneToChromosome[genePair.first] : forcedChromosomeName)
                               << "\t" << rowIndex
                               << "\t" << genePair.first + suffix
                               << "\tA\tB\t.\t.\t"
