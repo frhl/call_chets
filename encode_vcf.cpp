@@ -87,6 +87,7 @@ int main(int argc, char *argv[])
     std::string suffix = "";
     int minAC = 0;
     int maxAC = INT_MAX;
+    int rowIndex = 0;
     std::string forcedChromosomeName;
     float scalingFactor = 1.0;
     bool scaleDosage = true;
@@ -397,7 +398,11 @@ int main(int argc, char *argv[])
     // Print the output data
     for (const auto &chr : sortedContigs)
     {
-        int rowIndex = 0;
+	
+        if (forcedChromosomeName.empty()) {
+		rowIndex = 0;
+	}
+
         for (const auto &genePair : geneSampleDosage)
         {
             if (geneToChromosome[genePair.first] == chr)
