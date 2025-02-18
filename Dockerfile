@@ -36,6 +36,7 @@ COPY encode_vcf_by_group.cpp encode_vcf_by_group.cpp
 COPY transform.cpp transform.cpp
 COPY count_by_gene.cpp count_by_gene.cpp
 COPY filter_vcf_by_pp.cpp filter_vcf_by_pp.cpp
+COPY recode_vcf.cpp recode_vcf.cpp
 COPY .version .version
 RUN make
 
@@ -45,6 +46,7 @@ RUN mv encode_vcf /usr/local/bin/.
 RUN mv encode_vcf_by_group /usr/local/bin/.
 RUN mv transform /usr/local/bin/.
 RUN mv count_by_gene /usr/local/bin/.
+RUN mv recode_vcf /usr/local/bin/.
 
 
 # Set default command to R when the container starts
