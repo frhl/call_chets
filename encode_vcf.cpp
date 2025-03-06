@@ -8,6 +8,7 @@
 #include <string>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 std::string getVersion()
 {
@@ -114,15 +115,15 @@ int main(int argc, char *argv[])
         {
             mode = argv[++i];
         }
-	else if (arg == "--global-dom-dosage")
-	{
-		globalDomDosage = true;
-	}
-	else if (arg == "--force-chr-out-name" && i + 1 < argc)
-	{
-		forcedChromosomeName = argv[++i];
-	}
-	else if (arg == "--min-ac" && i + 1 < argc)
+        else if (arg == "--global-dom-dosage")
+        {
+            globalDomDosage = true;
+        }
+        else if (arg == "--force-chr-out-name" && i + 1 < argc)
+        {
+            forcedChromosomeName = argv[++i];
+        }
+        else if (arg == "--min-ac" && i + 1 < argc)
         {
             minAC = std::stoi(argv[++i]);
             if (minAC < 0)
@@ -140,7 +141,7 @@ int main(int argc, char *argv[])
                 return 1;
             }
         }
-	else if (arg == "--scaling-factor" && i + 1 < argc)
+        else if (arg == "--scaling-factor" && i + 1 < argc)
         {
             scalingFactor = std::stof(argv[++i]);
         }
@@ -148,7 +149,7 @@ int main(int argc, char *argv[])
         {
             suffix = argv[++i];
         }
-	else if (arg == "--no-dosage-scaling")
+        else if (arg == "--no-dosage-scaling")
         {
             scaleDosage = false; // Disable dosage scaling which is only relevant when mode='dominance'
         }
@@ -156,7 +157,7 @@ int main(int argc, char *argv[])
         {
             allInfo = true;
         }
-	else
+        else
         {
             std::cerr << "Error! Unknown or incomplete argument: " << arg << std::endl;
             printUsage(argv[0]);
@@ -183,6 +184,7 @@ int main(int argc, char *argv[])
     if (!sampleFile)
     {
         std::cerr << "Error: Cannot open <samples> file for reading: " << pathSamples << std::endl;
+        gzclose(longFile);
         return 1;
     }
 
@@ -192,19 +194,27 @@ int main(int argc, char *argv[])
 
     if (mode != "001" && mode != "012" && mode != "010" && mode != "011" &&  mode != "dominance")
     {
-        std::cerr << "Error: Invalid dosage encoding mode provided. Only '012|additive, '001|recessive', '010' or 'dominance'." << std::endl;
+        std::cerr << "Error: Invalid dosage encoding mode provided. Only '012|additive, '001|recessive', '010', '011' or 'dominance'." << std::endl;
         printUsage(argv[0]);
+        gzclose(longFile);
+        sampleFile.close();
         return 1;
     }
 
     // Collect all samples into a set
     std::set<std::string> samples;
     std::string sampleLine;
+    int sampleCount = 0;
     while (std::getline(sampleFile, sampleLine))
     {
         // Remove trailing and leading whitespaces
         sampleLine.erase(0, sampleLine.find_first_not_of(" \t\n\r"));
         sampleLine.erase(sampleLine.find_last_not_of(" \t\n\r") + 1);
+
+        // Skip empty lines
+        if (sampleLine.empty()) {
+            continue;
+        }
 
         // Split the line using white spaces
         std::istringstream iss(sampleLine);
@@ -216,20 +226,28 @@ int main(int argc, char *argv[])
             wordsInLine.push_back(word);
         }
 
-        // Check if line contains more than one word or is empty
-        if (wordsInLine.size() != 1 || sampleLine.empty())
+        // Check if line contains more than one word
+        if (wordsInLine.size() != 1)
         {
-            std::cerr << "Error: Invalid samples file format. Expected one sample per line but detected more! Do you have empty lines?" << std::endl;
+            std::cerr << "Error: Invalid samples file format. Expected one sample per line but detected more on line " << (sampleCount + 1) << "!" << std::endl;
             printUsage(argv[0]);
             sampleFile.close();
+            gzclose(longFile);
             return 1;
         }
 
-        // If line is not empty, add the sample to our set
-        if (!sampleLine.empty())
-        {
-            samples.insert(sampleLine);
-        }
+        // Add the sample to our set
+        samples.insert(sampleLine);
+        sampleCount++;
+    }
+
+    // Check if sample file is empty
+    if (samples.empty())
+    {
+        std::cerr << "Error: No valid samples found in file: " << pathSamples << std::endl;
+        gzclose(longFile);
+        sampleFile.close();
+        return 1;
     }
 
     // set total alleles
@@ -246,47 +264,87 @@ int main(int argc, char *argv[])
     std::map<std::string, int> geneCis;
 
     // Process long format file
-    std::string line, sample, chromosome, gene, configuration, variantInfo;
+    std::string line, sample, chromosome, gene, configuration;
     std::set<std::string> contigs;
     char buffer[4096];
     float dosage;
+    std::string variantInfo;
+    int lineCount = 0;
+    int matchingSampleCount = 0;
+    bool isFirstLine = true;
 
     while (gzgets(longFile, buffer, sizeof(buffer)))
     {
+        lineCount++;
         std::string line(buffer);
         std::istringstream iss(line);
+        
+        // Check for empty lines or comment lines
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+
+        // Count expected columns
+        std::vector<std::string> columns;
+        std::string field;
+        while (iss >> field) {
+            columns.push_back(field);
+        }
+        
+        // Validate number of columns
+        if (columns.size() < 6) {
+            std::cerr << "Error: Line " << lineCount << " has fewer than the expected 6 columns. Found " 
+                      << columns.size() << " columns." << std::endl;
+            gzclose(longFile);
+            return 1;
+        }
+        
+        // Reset stringstream to parse columns individually
+        iss.clear();
+        iss.str(line);
+        
+        // Parse columns
         iss >> sample >> chromosome >> gene >> configuration >> dosage >> variantInfo;
 
-	// Check if configuration is one of the expected values
-	if (configuration != "chet" && configuration != "het" && configuration != "cis" && configuration != "hom") {
-		std::cerr << "Error: 4th column '" << configuration << "' is not one of the expected values (chet, het, cis, hom) in line: " << line << std::endl;
-		gzclose(longFile);
-            	printUsage(argv[0]);
-		return 1;
-	}
+        // Check if configuration is one of the expected values
+        if (configuration != "chet" && configuration != "het" && configuration != "cis" && configuration != "hom") {
+            std::cerr << "Error: 4th column '" << configuration << "' is not one of the expected values (chet, het, cis, hom) in line " << lineCount << ": " << line << std::endl;
+            gzclose(longFile);
+            return 1;
+        }
+
+        // Validate dosage value
+        if (dosage < 0.0f || dosage > 2.0f) {
+            std::cerr << "Error: Dosage value '" << dosage << "' is outside the expected range [0-2] in line " << lineCount << ": " << line << std::endl;
+            gzclose(longFile);
+            return 1;
+        }
 
         // Skip processing this line if the sample is not in the set
         if (samples.find(sample) == samples.end()) continue;
 
-	// for recessive mode, set hets to zero
+        // If we reach here, we have at least one matching sample
+        matchingSampleCount++;
+
+        // for recessive mode, set hets to zero
         if (mode == "001" && dosage == 1.0f)
         {
             dosage = 0;
         }
 
-	// for het mode, set bi-allelic as zero
+        // for het mode, set bi-allelic as zero
         if (mode == "010" && dosage == 2.0f)
         {
             dosage = 0;
         }
 
-	// for '011' mode, set bi-allelic to 1
+        // for '011' mode, set bi-allelic to 1
         if (mode == "011" && dosage == 2.0f)
         {
             dosage = 1;
         }
 
-	// count indiviual sites
+        // count indiviual sites
         if (configuration == "chet")
         {
             geneChet[gene] += 1;
@@ -318,6 +376,21 @@ int main(int argc, char *argv[])
         geneToChromosome[gene] = chromosome;
         geneSampleDosage[gene][sample] = dosage;
         contigs.insert(chromosome);
+    }
+
+    // Check if the input file was empty
+    if (lineCount == 0) {
+        std::cerr << "Error: Input file is empty: " << pathInput << std::endl;
+        gzclose(longFile);
+        return 1;
+    }
+
+    // Check if there was no overlap between samples in input file and sample list
+    if (matchingSampleCount == 0) {
+        std::cerr << "Error: No overlap found between samples in input file and provided sample list." << std::endl;
+        std::cerr << "       Please check that sample names match between files." << std::endl;
+        gzclose(longFile);
+        return 1;
     }
 
     gzclose(longFile);
@@ -359,14 +432,14 @@ int main(int argc, char *argv[])
     
     // Check if forced chromosome name is provided and add it to the header
     if (!forcedChromosomeName.empty()) {
-	    std::cout << "##contig=<ID=" << forcedChromosomeName << ">\n";
+        std::cout << "##contig=<ID=" << forcedChromosomeName << ">\n";
     } else {
     // If no forced chromosome name, add all known contigs
     for (const auto &chr : sortedContigs) {
-	    std::cout << "##contig=<ID=" << chr << ">\n";
-	}
+        std::cout << "##contig=<ID=" << chr << ">\n";
+    }
     } 
-	    
+        
     std::cout << "##FORMAT=<ID=DS,Number=1,Type=Float,Description=\"Dosage\">\n";
     std::cout << "##INFO=<ID=AC,Number=1,Type=Integer,Description=\"Allele Count\">\n";
     std::cout << "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Allele Number\">\n";
@@ -380,13 +453,13 @@ int main(int argc, char *argv[])
         std::cout << "##INFO=<ID=r,Number=1,Type=Float,Description=\"Frequency of bi-allelic references (aa)\">\n";
         std::cout << "##INFO=<ID=h,Number=1,Type=Float,Description=\"Frequency of heterozygotes (Aa)\">\n";
         std::cout << "##INFO=<ID=a,Number=1,Type=Float,Description=\"Frequency of bi-allelic alternates (AA)\">\n";
-	if (allInfo == true) {
-		std::cout << "##INFO=<ID=minDosage,Number=1,Type=Float,Description=\"Minimum scaled dosage value for dominance mode\">\n";
-		std::cout << "##INFO=<ID=maxDosage,Number=1,Type=Float,Description=\"Maximum scaled dosage value for dominance mode\">\n";
-		std::cout << "##INFO=<ID=DS0,Number=1,Type=Float,Description=\"Scaled dosage for genotype aa in dominance mode\">\n";
-		std::cout << "##INFO=<ID=DS1,Number=1,Type=Float,Description=\"Scaled dosage for genotype Aa in dominance mode\">\n";
-		std::cout << "##INFO=<ID=DS2,Number=1,Type=Float,Description=\"Scaled dosage for genotype AA in dominance mode\">\n";
-	}
+        if (allInfo == true) {
+            std::cout << "##INFO=<ID=minDosage,Number=1,Type=Float,Description=\"Minimum scaled dosage value for dominance mode\">\n";
+            std::cout << "##INFO=<ID=maxDosage,Number=1,Type=Float,Description=\"Maximum scaled dosage value for dominance mode\">\n";
+            std::cout << "##INFO=<ID=DS0,Number=1,Type=Float,Description=\"Scaled dosage for genotype aa in dominance mode\">\n";
+            std::cout << "##INFO=<ID=DS1,Number=1,Type=Float,Description=\"Scaled dosage for genotype Aa in dominance mode\">\n";
+            std::cout << "##INFO=<ID=DS2,Number=1,Type=Float,Description=\"Scaled dosage for genotype AA in dominance mode\">\n";
+        }
     }
     std::cout << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT";
     for (const auto &sampleName : samples)
@@ -398,10 +471,10 @@ int main(int argc, char *argv[])
     // Print the output data
     for (const auto &chr : sortedContigs)
     {
-	
+    
         if (forcedChromosomeName.empty()) {
-		rowIndex = 0;
-	}
+            rowIndex = 0;
+        }
 
         for (const auto &genePair : geneSampleDosage)
         {
@@ -416,40 +489,40 @@ int main(int argc, char *argv[])
                 int currentHet = geneHet[genePair.first];
                 int currentCis = geneCis[genePair.first];
 
-		// Skip processing this gene/pseudo-variant if
-		// in dominance mode and no homozygotes present
-		if (mode == "dominance" && currentBI == 0) {
-			continue;
-		}
+                // Skip processing this gene/pseudo-variant if
+                // in dominance mode and no homozygotes present
+                if (mode == "dominance" && currentBI == 0) {
+                    continue;
+                }
 
-		// derive reference alleles
-		float aa_count = static_cast<float>((currentAN/2) - (currentCis + currentHet + currentBI));
-		float Aa_count = static_cast<float>(currentHet + currentCis);
-		float AA_count = static_cast<float>(currentBI);
+                // derive reference alleles
+                float aa_count = static_cast<float>((currentAN/2) - (currentCis + currentHet + currentBI));
+                float Aa_count = static_cast<float>(currentHet + currentCis);
+                float AA_count = static_cast<float>(currentBI);
 
-		// rename accordinly
-		float r = static_cast<float>(aa_count / (currentAN/2));
-		float h = static_cast<float>(Aa_count / (currentAN/2));
-		float a = static_cast<float>(AA_count / (currentAN/2));
-		float totalFrequency = r + h + a; // should eq to 1
+                // rename accordinly
+                float r = static_cast<float>(aa_count / (currentAN/2));
+                float h = static_cast<float>(Aa_count / (currentAN/2));
+                float a = static_cast<float>(AA_count / (currentAN/2));
+                float totalFrequency = r + h + a; // should eq to 1
 
-		// Pre-compute the three possible dosage configurations
-		// when performing dominance deviation
-		float dom_dosage_aa = -h * a; // Dosage for genotype aa
-		float dom_dosage_Aa = 2 * a * r; // Dosage for genotype Aa
-		float dom_dosage_AA = -h * r; // Dosage for genotype AA
+                // Pre-compute the three possible dosage configurations
+                // when performing dominance deviation
+                float dom_dosage_aa = -h * a; // Dosage for genotype aa
+                float dom_dosage_Aa = 2 * a * r; // Dosage for genotype Aa
+                float dom_dosage_AA = -h * r; // Dosage for genotype AA
 
-		// Find min and max dosage values for scaling
-		float minDomDosage = std::min({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
-		float maxDomDosage = std::max({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
-	
-		// overwrite dominance dosage 
-	        if (globalDomDosage && mode == "dominance") {
-		    minDomDosage = globalMinDomDosage;
-		    maxDomDosage = globalMaxDomDosage;
-		}
+                // Find min and max dosage values for scaling
+                float minDomDosage = std::min({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+                float maxDomDosage = std::max({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+            
+                // overwrite dominance dosage 
+                if (globalDomDosage && mode == "dominance") {
+                    minDomDosage = globalMinDomDosage;
+                    maxDomDosage = globalMaxDomDosage;
+                }
 
-		// only output variants that fit our criteria
+                // only output variants that fit our criteria
                 if (currentAC >= minAC && currentAC < maxAC)
                 {
 
@@ -465,47 +538,47 @@ int main(int argc, char *argv[])
                               << ";HOM=" << currentHom
                               << ";CIS=" << currentCis;
 
-	            // be verbose at times'
-		    if ((mode == "dominance") & (allInfo == true)) {
-			std::cout << ";r=" << r
-				  << ";h=" << h
-				  << ";a=" << a
-				  << ";minDosage=" << minDomDosage
-				  << ";maxDosage=" << maxDomDosage
-				  << ";DS0=" << 2*(((-h*a) - minDomDosage)/(maxDomDosage - minDomDosage))
-				  << ";DS1=" << 2*(((2*a *r) - minDomDosage)/(maxDomDosage - minDomDosage))
-				  << ";DS2=" << 2*(((-h*r) - minDomDosage)/(maxDomDosage - minDomDosage));
-		    }
+                    // be verbose at times'
+                    if ((mode == "dominance") & (allInfo == true)) {
+                        std::cout << ";r=" << r
+                                << ";h=" << h
+                                << ";a=" << a
+                                << ";minDosage=" << minDomDosage
+                                << ";maxDosage=" << maxDomDosage
+                                << ";DS0=" << 2*(((-h*a) - minDomDosage)/(maxDomDosage - minDomDosage))
+                                << ";DS1=" << 2*(((2*a *r) - minDomDosage)/(maxDomDosage - minDomDosage))
+                                << ";DS2=" << 2*(((-h*r) - minDomDosage)/(maxDomDosage - minDomDosage));
+                    }
 
-	            std::cout << "\tDS"; //
+                    std::cout << "\tDS"; //
 
                     // get right side of body VCF
                     for (const auto &sample : samples)
                     {
                         std::cout << "\t";
-			float dosage = 0;
-		    	if (genePair.second.find(sample) != genePair.second.end()) {
-				dosage = genePair.second.at(sample);
-		    	}
+                        float dosage = 0;
+                        if (genePair.second.find(sample) != genePair.second.end()) {
+                            dosage = genePair.second.at(sample);
+                        }
 
-			if (mode == "dominance") {
-				if (dosage == 0.0) {
-			    		dosage = -h * a;
-				} else if (dosage == 1.0) {
-			 		dosage = 2 * a * r;
-				} else if (dosage == 2.0) {
-			    		dosage = -h * r;
-				}
-				if (scaleDosage) {
-					dosage = 2*((dosage - minDomDosage)/(maxDomDosage - minDomDosage));
-				}
+                        if (mode == "dominance") {
+                            if (dosage == 0.0) {
+                                dosage = -h * a;
+                            } else if (dosage == 1.0) {
+                                dosage = 2 * a * r;
+                            } else if (dosage == 2.0) {
+                                dosage = -h * r;
+                            }
+                            if (scaleDosage) {
+                                dosage = 2*((dosage - minDomDosage)/(maxDomDosage - minDomDosage));
+                            }
 
-				if (scalingFactor != 1.0)
-				{
-					dosage *=scalingFactor;
-				}
-			}
-			std::cout << dosage;
+                            if (scalingFactor != 1.0)
+                            {
+                                dosage *=scalingFactor;
+                            }
+                        }
+                        std::cout << dosage;
                     }
                     std::cout << std::endl;
                 }
@@ -515,4 +588,3 @@ int main(int argc, char *argv[])
 
     return 0;
 }
-

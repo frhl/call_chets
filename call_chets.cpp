@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <zlib.h>
 #include <set>
+#include <regex>
 
 std::string getVersion()
 {
@@ -65,6 +66,36 @@ void printUsage(const char *path)
     std::cerr << "\nNotes:" << std::endl;
     std::cerr << "  Ensure that the --geno file is appropriately formatted (optionally gzipped)." << std::endl;
     std::cerr << "  The program will attempt to match variants between the --gene-map and --geno file, discarding those that do not match." << std::endl;
+}
+
+// Function to validate variant format (chr:pos:ref:alt)
+bool isValidVariantFormat(const std::string& variant) {
+    std::regex pattern("^(chr)?[0-9XYM]{1,2}:[0-9]+:[ACGT]+:[ACGT]+$");
+    return std::regex_match(variant, pattern);
+}
+
+// Function to validate score value (between 0 and 1)
+bool isValidScore(float score) {
+    return score >= 0.0f && score <= 1.0f;
+}
+
+// Function to check if a file is empty
+bool isFileEmpty(gzFile file) {
+    char testBuf[2];
+    int bytesRead = gzread(file, testBuf, 1);
+    gzrewind(file);  // Reset file position
+    return bytesRead <= 0;
+}
+
+// Function to count columns in a string
+size_t countColumns(const std::string& line) {
+    std::stringstream ss(line);
+    std::string temp;
+    size_t count = 0;
+    while (ss >> temp) {
+        count++;
+    }
+    return count;
 }
 
 int main(int argc, char *argv[])
@@ -172,7 +203,23 @@ int main(int argc, char *argv[])
     if (!mappingFile)
     {
         std::cerr << "Error: Cannot open --mapping file for reading: " << pathMap << std::endl;
+        gzclose(genotypeFile);
         printUsage(argv[0]);
+        return 1;
+    }
+
+    // Check if files are empty
+    if (isFileEmpty(genotypeFile)) {
+        std::cerr << "Error: Genotype file is empty: " << pathGeno << std::endl;
+        gzclose(genotypeFile);
+        gzclose(mappingFile);
+        return 1;
+    }
+
+    if (isFileEmpty(mappingFile)) {
+        std::cerr << "Error: Mapping file is empty: " << pathMap << std::endl;
+        gzclose(genotypeFile);
+        gzclose(mappingFile);
         return 1;
     }
 
@@ -191,12 +238,37 @@ int main(int argc, char *argv[])
     std::map<std::string, std::vector<std::string>> variantToGene;
     std::map<std::string, std::map<std::string, double>> variantGeneToPathogenicity;
     std::string variant, gene;
-    char buf[1024];
+    char buf[4096]; // Increased buffer size for potentially larger lines
 
     bool isFirstLineMappingFile = true;
+    int mappingLineCount = 0;
+    int validMappingLines = 0;
+    int invalidFormatVariants = 0;
+
     while (gzgets(mappingFile, buf, sizeof(buf)))
     {
-        std::stringstream ss(buf);
+        mappingLineCount++;
+        std::string line(buf);
+        
+        // Remove trailing newline characters
+        line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
+        line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
+        
+        // Skip empty lines
+        if (line.empty()) {
+            continue;
+        }
+
+        // Check column count
+        size_t columnCount = countColumns(line);
+        if (columnCount < 2 && !isFirstLineMappingFile) {
+            std::cerr << "Error: Line " << mappingLineCount << " in mapping file has fewer than required 2 columns: '" << line << "'" << std::endl;
+            gzclose(mappingFile);
+            gzclose(genotypeFile);
+            return 1;
+        }
+
+        std::stringstream ss(line);
         ss >> variant >> gene;
 
         // Check whether data extraction was successful.
@@ -204,18 +276,41 @@ int main(int argc, char *argv[])
         {
             if(!isFirstLineMappingFile)
             {
-                std::cerr << "Error: Failed to extract two columns from line (variant gene): " << buf << ". Please, fix this line in --gene-map and retry." << std::endl;
+                std::cerr << "Error: Failed to extract two columns from line " << mappingLineCount 
+                          << " (variant gene): '" << line << "'. Please, fix this line in --gene-map and retry." << std::endl;
                 gzclose(mappingFile);
+                gzclose(genotypeFile);
                 return 1;
             }
         }
         else
         {
+            // Validate variant format (only for non-header lines)
+            if (!isFirstLineMappingFile && !isValidVariantFormat(variant)) {
+                invalidFormatVariants++;
+                if (verbose) {
+                    std::cerr << "Warning: Line " << mappingLineCount << " - Invalid variant format: " << variant 
+                              << ". Expected format: chr:pos:ref:alt" << std::endl;
+                }
+            }
+            
             variantToGene[variant].push_back(gene);
+            validMappingLines++;
         }
         isFirstLineMappingFile = false;
     }
     gzclose(mappingFile);
+
+    // Check if any valid mapping lines were found after header
+    if (validMappingLines == 0) {
+        std::cerr << "Error: No valid mapping data found in: " << pathMap << std::endl;
+        gzclose(genotypeFile);
+        return 1;
+    }
+
+    if (invalidFormatVariants > 0) {
+        std::cerr << "Warning: " << invalidFormatVariants << " variants in mapping file have invalid format." << std::endl;
+    }
 
     // read the info-map file if provided
     std::map<std::pair<std::string, std::string>, std::string> infoMap;
@@ -228,31 +323,80 @@ int main(int argc, char *argv[])
         }
         else
         {
-            char infoBuf[1024];
-            bool isFirstLine = true;
-            while (gzgets(infoMapFile, infoBuf, sizeof(infoBuf)))
-            {
-                std::stringstream ss(infoBuf);
-                std::string variant, gene, info;
-                ss >> variant >> gene >> info;
+            if (isFileEmpty(infoMapFile)) {
+                std::cerr << "Warning: Info mapping file is empty: " << pathInfoMap << ". Continuing without info data." << std::endl;
+                gzclose(infoMapFile);
+            }
+            else {
+                char infoBuf[4096];
+                bool isFirstLine = true;
+                int infoLineCount = 0;
+                int validInfoLines = 0;
 
-                // Check whether data extraction was successful.
-                if(ss.fail() || ss.bad())
+                while (gzgets(infoMapFile, infoBuf, sizeof(infoBuf)))
                 {
-                    if(!isFirstLine)
-                    {
-                        std::cerr << "Error: Failed to extract variant, gene, and info from line: " << infoBuf 
-                                  << "Please, fix this line in --info-map and retry." << std::endl;
+                    infoLineCount++;
+                    std::string line(infoBuf);
+                    
+                    // Remove trailing newline characters
+                    line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
+                    line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
+                    
+                    // Skip empty lines
+                    if (line.empty()) {
+                        continue;
+                    }
+
+                    // Check column count
+                    size_t columnCount = countColumns(line);
+                    if (columnCount < 3 && !isFirstLine) {
+                        std::cerr << "Error: Line " << infoLineCount << " in info-map file has fewer than required 3 columns: '" 
+                                << line << "'" << std::endl;
+                        gzclose(infoMapFile);
+                        gzclose(genotypeFile);
                         return 1;
                     }
+
+                    std::stringstream ss(line);
+                    std::string variant, gene, info;
+                    ss >> variant >> gene >> info;
+
+                    // Check whether data extraction was successful.
+                    if(ss.fail() || ss.bad())
+                    {
+                        if(!isFirstLine)
+                        {
+                            std::cerr << "Error: Failed to extract variant, gene, and info from line " << infoLineCount 
+                                    << ": '" << line << "'. Please, fix this line in --info-map and retry." << std::endl;
+                            gzclose(infoMapFile);
+                            gzclose(genotypeFile);
+                            return 1;
+                        }
+                    }
+                    else
+                    {
+                        // Validate variant format (only for non-header lines)
+                        if (!isFirstLine && !isValidVariantFormat(variant)) {
+                            if (verbose) {
+                                std::cerr << "Warning: Line " << infoLineCount << " in info-map - Invalid variant format: " 
+                                        << variant << ". Expected format: chr:pos:ref:alt" << std::endl;
+                            }
+                        }
+                        
+                        infoMap[std::make_pair(variant, gene)] = info;
+                        validInfoLines++;
+                    }
+                    isFirstLine = false;
                 }
-                else
-                {
-                    infoMap[std::make_pair(variant, gene)] = info;
+
+                // Check if any valid info lines were found after header
+                if (validInfoLines == 0) {
+                    std::cerr << "Warning: No valid info mapping data found in: " << pathInfoMap 
+                            << ". Continuing without info data." << std::endl;
                 }
-                isFirstLine = false;
+
+                gzclose(infoMapFile);
             }
-            gzclose(infoMapFile);
         }
     }
 
@@ -268,32 +412,95 @@ int main(int argc, char *argv[])
         }
         else
         {
-            char pathoBuf[1024];
-            bool isFirstLine = true;
-            while (gzgets(scoreMapFile, pathoBuf, sizeof(pathoBuf)))
-            {
-                std::stringstream ss(pathoBuf);
-                std::string variant, gene;
-                float newScore;
-                ss >> variant >> gene >> newScore;
+            if (isFileEmpty(scoreMapFile)) {
+                std::cerr << "Warning: Score mapping file is empty: " << pathScoreMap << ". Continuing without score data." << std::endl;
+                gzclose(scoreMapFile);
+            }
+            else {
+                char pathoBuf[4096];
+                bool isFirstLine = true;
+                int scoreLineCount = 0;
+                int validScoreLines = 0;
+                int invalidScoreValues = 0;
 
-                // Check whether data extraction was successful.
-                if(ss.fail() || ss.bad())
+                while (gzgets(scoreMapFile, pathoBuf, sizeof(pathoBuf)))
                 {
-                    if(!isFirstLine)
-                    {
-                        std::cerr << "Error: Failed to extract variant, gene, and score from line: "
-                                << pathoBuf << ". Please, fix this line in --score-map and retry." << std::endl;
+                    scoreLineCount++;
+                    std::string line(pathoBuf);
+                    
+                    // Remove trailing newline characters
+                    line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
+                    line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
+                    
+                    // Skip empty lines
+                    if (line.empty()) {
+                        continue;
+                    }
+
+                    // Check column count
+                    size_t columnCount = countColumns(line);
+                    if (columnCount < 3 && !isFirstLine) {
+                        std::cerr << "Error: Line " << scoreLineCount << " in score-map file has fewer than required 3 columns: '" 
+                                << line << "'" << std::endl;
+                        gzclose(scoreMapFile);
+                        gzclose(genotypeFile);
                         return 1;
                     }
+
+                    std::stringstream ss(line);
+                    std::string variant, gene;
+                    float newScore;
+                    ss >> variant >> gene >> newScore;
+
+                    // Check whether data extraction was successful.
+                    if(ss.fail() || ss.bad())
+                    {
+                        if(!isFirstLine)
+                        {
+                            std::cerr << "Error: Failed to extract variant, gene, and score from line " << scoreLineCount 
+                                    << ": '" << line << "'. Please, fix this line in --score-map and retry." << std::endl;
+                            gzclose(scoreMapFile);
+                            gzclose(genotypeFile);
+                            return 1;
+                        }
+                    }
+                    else
+                    {
+                        // Validate variant format (only for non-header lines)
+                        if (!isFirstLine && !isValidVariantFormat(variant)) {
+                            if (verbose) {
+                                std::cerr << "Warning: Line " << scoreLineCount << " in score-map - Invalid variant format: " 
+                                        << variant << ". Expected format: chr:pos:ref:alt" << std::endl;
+                            }
+                        }
+                        
+                        // Validate score range
+                        if (!isFirstLine && !isValidScore(newScore)) {
+                            invalidScoreValues++;
+                            if (verbose) {
+                                std::cerr << "Warning: Line " << scoreLineCount << " - Score value " << newScore 
+                                        << " is outside valid range [0-1]" << std::endl;
+                            }
+                        }
+                        
+                        variantGeneScore[std::make_pair(variant, gene)] = newScore;
+                        validScoreLines++;
+                    }
+                    isFirstLine = false;
                 }
-                else
-                {
-                    variantGeneScore[std::make_pair(variant, gene)] = newScore;
+
+                // Check if any valid score lines were found after header
+                if (validScoreLines == 0) {
+                    std::cerr << "Warning: No valid score mapping data found in: " << pathScoreMap 
+                            << ". Continuing without score data." << std::endl;
                 }
-                isFirstLine = false;
+
+                if (invalidScoreValues > 0) {
+                    std::cerr << "Warning: " << invalidScoreValues << " scores in score-map file are outside the valid range [0-1]." << std::endl;
+                }
+
+                gzclose(scoreMapFile);
             }
-            gzclose(scoreMapFile);
         }
     }
 
@@ -307,28 +514,77 @@ int main(int argc, char *argv[])
     std::set<std::string> uniqueVariantsKept;
     std::set<std::string> uniqueVariantsDiscarded;
     std::set<std::string> multiGeneVariants;
+    std::set<std::string> uniqueSamples;
 
     bool isFirstLine = true;
+    int genoLineCount = 0;
+    int validGenoLines = 0;
+    int skippedGenoLines = 0;
+    int invalidFormatGenoVariants = 0;
+    int invalidGenotypeFormat = 0;
+
     while (gzgets(genotypeFile, buf, sizeof(buf)))
     {
-        std::stringstream ss(buf);
+        genoLineCount++;
+        std::string line(buf);
+        
+        // Remove trailing newline characters
+        line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
+        line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
+        
+        // Skip empty lines
+        if (line.empty()) {
+            continue;
+        }
+
+        // Check column count
+        size_t columnCount = countColumns(line);
+        if (columnCount < 3) {
+            std::cerr << "Error: Line " << genoLineCount << " in genotype file has fewer than required 3 columns: '" 
+                      << line << "'" << std::endl;
+            skippedGenoLines++;
+            continue;
+        }
+
+        std::stringstream ss(line);
         std::string sample, variant, genotype;
         ss >> sample >> variant >> genotype;
 
         // if header skip line
         if ((genotype != "1|0" && genotype != "0|1" && genotype != "1|1") && (isFirstLine))
         {
+            isFirstLine = false;
             continue;
         }
-        isFirstLine = false;
+
+        uniqueSamples.insert(sample);
+
+        // Validate variant format
+        if (!isValidVariantFormat(variant)) {
+            invalidFormatGenoVariants++;
+            if (verbose && invalidFormatGenoVariants <= 10) { // Only show first 10 warnings to avoid flooding
+                std::cerr << "Warning: Line " << genoLineCount << " - Invalid variant format: " << variant 
+                          << ". Expected format: chr:pos:ref:alt" << std::endl;
+            }
+        }
 
         // Warn user that skipping is happening
         if (genotype != "1|0" && genotype != "0|1" && genotype != "1|1")
         {
-            std::cerr << "Warning: Skipping unexpected genotype value (" << genotype << ") in sample "
-                      << sample << " for variant " << variant << ". Expecting columns: sample variant genotype." << std::endl;
+            invalidGenotypeFormat++;
+            if (invalidGenotypeFormat <= 10) { // Limit number of warnings
+                std::cerr << "Warning: Line " << genoLineCount << " - Skipping unexpected genotype value (" << genotype 
+                          << ") in sample " << sample << " for variant " << variant 
+                          << ". Expected values: 1|0, 0|1, or 1|1." << std::endl;
+            }
+            else if (invalidGenotypeFormat == 11) {
+                std::cerr << "Warning: Additional invalid genotype formats found. Suppressing further warnings." << std::endl;
+            }
+            skippedGenoLines++;
             continue;
         }
+
+        validGenoLines++;
 
         if (variantToGene.find(variant) != variantToGene.end())
         {
@@ -363,12 +619,28 @@ int main(int argc, char *argv[])
             uniqueVariantsDiscarded.insert(variant);
         }
     }
+    gzclose(genotypeFile);
+
+    // Check for processing statistics
+    if (skippedGenoLines > 0) {
+        std::cerr << "Warning: Skipped " << skippedGenoLines << " lines in genotype file due to format issues." << std::endl;
+    }
+
+    if (validGenoLines == 0) {
+        std::cerr << "Error: No valid genotype data found in file: " << pathGeno << std::endl;
+        return 1;
+    }
 
     // Check if there are no matching variants
     if (uniqueVariantsKept.empty())
     {
         std::cerr << "Error: No matching variants found between the --map and --geno file!" << std::endl;
         return 1;
+    }
+
+    // Report on sample count
+    if (verbose) {
+        std::cerr << "Found " << uniqueSamples.size() << " unique samples in genotype file." << std::endl;
     }
 
     // only print stuff if user wants it
@@ -380,11 +652,13 @@ int main(int argc, char *argv[])
     }
 
     // Print results
+    int resultsCount = 0;
     for (const auto &samplePair : sampleGeneHaplotypeVariant)
     {
         const std::string &sample = samplePair.first;
         for (const auto &genePair : samplePair.second)
         {
+            resultsCount++;
             const std::string &gene = genePair.first;
             const auto &haplotypeVariantMap = genePair.second;
             std::string chromosome;
@@ -392,9 +666,23 @@ int main(int argc, char *argv[])
             std::set<std::string> haplotype1Variants = haplotypeVariantMap.count(1) ? std::set<std::string>(haplotypeVariantMap.at(1).begin(), haplotypeVariantMap.at(1).end()) : std::set<std::string>();
             std::set<std::string> haplotype2Variants = haplotypeVariantMap.count(2) ? std::set<std::string>(haplotypeVariantMap.at(2).begin(), haplotypeVariantMap.at(2).end()) : std::set<std::string>();
 
+            // Safety check for empty variant sets
+            if (haplotype1Variants.empty() && haplotype2Variants.empty()) {
+                if (verbose) {
+                    std::cerr << "Warning: Empty variant sets for sample " << sample << " and gene " << gene << ". Skipping." << std::endl;
+                }
+                continue;
+            }
+
             // extract chromosome from string
             std::set<std::string> mergedVariants;
             std::set_union(haplotype1Variants.begin(), haplotype1Variants.end(), haplotype2Variants.begin(), haplotype2Variants.end(), std::inserter(mergedVariants, mergedVariants.begin()));
+            
+            if (mergedVariants.empty()) {
+                std::cerr << "Error: No valid variants found for sample " << sample << " and gene " << gene << std::endl;
+                continue;
+            }
+            
             const std::string& variant = *mergedVariants.begin(); // taking the first variant
             std::stringstream ss(variant);
             std::getline(ss, chromosome, ':'); // extracting chromosome part
@@ -665,6 +953,14 @@ int main(int argc, char *argv[])
             std::cout << std::endl;
         }
     }
+
+    // Final summary
+    if (resultsCount == 0) {
+        std::cerr << "Warning: No results were generated. Check your input files and parameters." << std::endl;
+    }
+    else if (verbose) {
+        std::cerr << "Successfully generated " << resultsCount << " result entries." << std::endl;
+    }
+
     return 0;
 }
-
