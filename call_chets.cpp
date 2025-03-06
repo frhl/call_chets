@@ -9,25 +9,60 @@
 #include <set>
 #include <regex>
 
+#ifndef GIT_COMMIT
+#define GIT_COMMIT "unknown"
+#endif
+
+#ifndef GIT_DATE
+#define GIT_DATE "unknown"
+#endif
+
+#ifndef VERSION
+#define VERSION "0.3.0"
+#endif
+
 std::string getVersion()
 {
+    // Use preprocessor macros for version and git info
+    std::string version = VERSION;
+    std::string gitCommit = GIT_COMMIT;
+    std::string gitDate = GIT_DATE;
+    
+    // Try to read from .version file if it exists
     std::ifstream versionFile(".version");
-    if (!versionFile.is_open())
+    if (versionFile.is_open())
     {
-        std::cerr << "Warning: Unable to open .version file." << std::endl;
+        std::string fileVersion;
+        if (std::getline(versionFile, fileVersion) && !fileVersion.empty())
+        {
+            version = fileVersion;
+        }
+        versionFile.close();
     }
-    std::string version;
-    std::getline(versionFile, version);
-    versionFile.close();
-
-    return version;
+    
+    // Construct full version string
+    std::string versionInfo = version + " / commit = " + gitCommit + " / release = " + gitDate;
+    return versionInfo;
 }
+
+#include <ctime>
 
 void printUsage(const char *path)
 {
+    // Get version info
     std::string version = getVersion();
-    std::cerr << "\nProgram: chet tools v" << version << "\n"
-              << std::endl;
+    
+    // Get current date and time
+    std::time_t now = std::time(nullptr);
+    char timestr[100];
+    std::strftime(timestr, sizeof(timestr), "%d/%m/%Y - %H:%M:%S", std::localtime(&now));
+    
+    // Print header with version and run date
+    std::cerr << "\n[CALL_CHETS] compound heterozygosity and cis variant caller"
+              << "\n  * Version       : " << version
+              << "\n  * Run date      : " << timestr
+              << "\n" << std::endl;
+              
     std::cerr << "Usage: " << path << " --geno <Genotype File> --map <Mapping File> [--info-map <Info Mapping File>] [--dosage-map <Dosage Mapping File>]\n"
               << std::endl;
 

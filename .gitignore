@@ -4,3 +4,6 @@ testhat/
 *.txt
 *.gz
 *.o
+.CACHED
+.claude.md
+claude.md

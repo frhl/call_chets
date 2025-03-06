@@ -3,6 +3,14 @@ CFLAGS = -Wall -O2
 INCLUDES = -I/usr/local/include
 LIBS = -L/usr/local/lib -lhts -lz
 
+# Get version info from git
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+GIT_DATE := $(shell git log -1 --format=%cd --date=short 2>/dev/null || date +"%Y-%m-%d")
+VERSION := $(shell cat .version 2>/dev/null || echo "0.3.0")
+
+# Add git info to compilation flags
+CFLAGS += -DGIT_COMMIT=\"$(GIT_COMMIT)\" -DGIT_DATE=\"$(GIT_DATE)\" -DVERSION=\"$(VERSION)\"
+
 TARGET1 = filter_vcf_by_pp
 TARGET2 = call_chets
 TARGET3 = encode_vcf

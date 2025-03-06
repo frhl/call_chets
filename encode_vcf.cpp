@@ -10,24 +10,59 @@
 #include <cmath>
 #include <limits>
 
+#ifndef GIT_COMMIT
+#define GIT_COMMIT "unknown"
+#endif
+
+#ifndef GIT_DATE
+#define GIT_DATE "unknown"
+#endif
+
+#ifndef VERSION
+#define VERSION "0.3.0"
+#endif
+
 std::string getVersion()
 {
+    // Use preprocessor macros for version and git info
+    std::string version = VERSION;
+    std::string gitCommit = GIT_COMMIT;
+    std::string gitDate = GIT_DATE;
+    
+    // Try to read from .version file if it exists
     std::ifstream versionFile(".version");
-    if (!versionFile.is_open())
+    if (versionFile.is_open())
     {
-        std::cerr << "Warning: Unable to open .version file." << std::endl;
+        std::string fileVersion;
+        if (std::getline(versionFile, fileVersion) && !fileVersion.empty())
+        {
+            version = fileVersion;
+        }
+        versionFile.close();
     }
-    std::string version;
-    std::getline(versionFile, version);
-    versionFile.close();
-
-    return version;
+    
+    // Construct full version string
+    std::string versionInfo = version + " / commit = " + gitCommit + " / release = " + gitDate;
+    return versionInfo;
 }
+
+#include <ctime>
 
 void printUsage(const char *path)
 {
+    // Get version info
     std::string version = getVersion();
-    std::cerr << "\nProgram: chet tools v" << version << "\n";
+    
+    // Get current date and time
+    std::time_t now = std::time(nullptr);
+    char timestr[100];
+    std::strftime(timestr, sizeof(timestr), "%d/%m/%Y - %H:%M:%S", std::localtime(&now));
+    
+    // Print header with version and run date
+    std::cerr << "\n[ENCODE_VCF] vcf encoder for CALL_CHETS output"
+              << "\n  * Version       : " << version
+              << "\n  * Run date      : " << timestr << "\n";
+              
     std::cerr << "\nUsage: " << path
               << " --input <input> --samples <samples>"
               << " --mode [<additive|recessive|dominance|001|012|010|011>]\n";
@@ -447,7 +482,7 @@ int main(int argc, char *argv[])
     std::cout << "##INFO=<ID=CHET,Number=1,Type=Integer,Description=\"Compound heterozygous pseudo Count\">\n";
     std::cout << "##INFO=<ID=HOM,Number=1,Type=Integer,Description=\"Homozygous Count\">\n";
     std::cout << "##INFO=<ID=HET,Number=1,Type=Integer,Description=\"Heterozygous Count\">\n";
-    std::cout << "##INFO=<ID=CIS,Number=1,Type=Integer,Description=\"Cis pseudo Count \">\n";
+    std::cout << "##INFO=<ID=CIS,Number=1,Type=Integer,Description=\"Cis pseudo Count\">\n";
     // add dominance relevant information
     if (mode == "dominance") {
         std::cout << "##INFO=<ID=r,Number=1,Type=Float,Description=\"Frequency of bi-allelic references (aa)\">\n";
@@ -471,7 +506,6 @@ int main(int argc, char *argv[])
     // Print the output data
     for (const auto &chr : sortedContigs)
     {
-    
         if (forcedChromosomeName.empty()) {
             rowIndex = 0;
         }
@@ -504,7 +538,6 @@ int main(int argc, char *argv[])
                 float r = static_cast<float>(aa_count / (currentAN/2));
                 float h = static_cast<float>(Aa_count / (currentAN/2));
                 float a = static_cast<float>(AA_count / (currentAN/2));
-                float totalFrequency = r + h + a; // should eq to 1
 
                 // Pre-compute the three possible dosage configurations
                 // when performing dominance deviation

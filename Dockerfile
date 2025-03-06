@@ -30,6 +30,7 @@ RUN ldconfig
 # copy scripts
 WORKDIR app
 COPY makefile makefile
+COPY make_version.sh make_version.sh
 COPY call_chets.cpp call_chets.cpp
 COPY encode_vcf.cpp encode_vcf.cpp
 COPY encode_vcf_by_group.cpp encode_vcf_by_group.cpp
@@ -37,7 +38,14 @@ COPY transform.cpp transform.cpp
 COPY count_by_gene.cpp count_by_gene.cpp
 COPY filter_vcf_by_pp.cpp filter_vcf_by_pp.cpp
 COPY recode_vcf.cpp recode_vcf.cpp
-COPY .version .version
+
+# Set execute permission for make_version.sh
+RUN chmod +x make_version.sh
+
+# Create version file (will be embedded in binaries through makefile)
+RUN ./make_version.sh
+
+# Build the applications
 RUN make
 
 # move to folder in PATH
