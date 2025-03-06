@@ -1,12 +1,32 @@
 # Call compound heterozygous variants
-This repository contains C++ scripts tailored for analyses with phased data, specifically involving variant call format (VCF) files.
+This repository contains C++ scripts tailored for analyses with phased data to create pseudo-variants.
 
 ## Installation
+
+### Compile from source
 1. Ensure you have the necessary cpp libraries. Check the provided `Dockerfile` for the complete list.
 2. Install [BCFtools](https://samtools.github.io/bcftools/howtos/install.html).
 3. To compile the scripts, navigate to the repository's directory and run:
 ```
 make
+```
+
+### Docker
+You can also use the provided Docker image:
+
+1. Build the Docker image locally with git information:
+```
+./build_docker.sh
+```
+
+2. Or pull from DockerHub:
+```
+docker pull fhlassen/call_chets:0.3.3
+```
+
+3. Run the container:
+```
+docker run -it call_chets:0.3.3
 ```
 
 ## Usage
@@ -82,8 +102,6 @@ Convert the results into a VCF file with additive or recessive encoding. Genes w
   --min-ac 1 | bgzip > trio.result.vcf.gz
 ```
 
-### Notes on testing for dominance deviation
-TODO
 
 ## Haplotype and gene collapsing schemes:
 Encode a model with probability of both haplotypes being knocked out:
@@ -128,23 +146,3 @@ chr21:10541149:C:T	ENSG00000274391	0.087
 chr21:10541158:A:C	ENSG00000274391	0.0729
 ..
 ```
-
-
-
-## `run_call_chets.sh`: A wrapper that combines all the above (Needs to be tested with new version!)
-That script combines several tools to a pipeline for CompHet calling. In particular, for a given chromosome:
-1. Calls BCFtools (alternative to `get_non_ref_sites`) to extract non-ref genotypes for a phased BCF.
-2. Then uses `prepare_genemap.py` to prepare gene-variant maps according to each consequence (e.g. pLoF + damaging_missense).
-3. Based on that, it calls `call_chets` to detect CompHet events from the output of step-1.
-4. Finally, it runs `encode_vcf` to create a VCF based on each consequence and type of effects, e.g. additive or recessive.
-
-As a last step, we could combine any chrom-based files to one genome-wide by running
-```
-for consq in pLoF pLoF_damaging damaging_missense synonymous; do
-    for mode in additive recessive; do
-        echo FIXTHIS.chr{1..22}.$mode.$consq.vcf.gz| tr ' ' '\n' > files.txt
-        bcftools concat -f files.txt -Oz -o FIXTHIS.chrALL.$mode.$consq.vcf.gz
-    done
-done
-```
-

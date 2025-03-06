@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Get git information for DockerHub automated builds
+GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+GIT_DATE=$(git log -1 --format=%cd --date=short 2>/dev/null || date +"%Y-%m-%d")
+
+# Tell DockerHub to use these as build arguments
+echo "GIT_COMMIT=${GIT_COMMIT}" >> "$DOCKERFILE_PATH_ARGS"
+echo "GIT_DATE=${GIT_DATE}" >> "$DOCKERFILE_PATH_ARGS"
+
+echo "Added build args: GIT_COMMIT=${GIT_COMMIT}, GIT_DATE=${GIT_DATE}"

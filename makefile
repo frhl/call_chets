@@ -3,9 +3,9 @@ CFLAGS = -Wall -O2
 INCLUDES = -I/usr/local/include
 LIBS = -L/usr/local/lib -lhts -lz
 
-# Get version info from git
-GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-GIT_DATE := $(shell git log -1 --format=%cd --date=short 2>/dev/null || date +"%Y-%m-%d")
+# Get version info from environment or git
+GIT_COMMIT := $(shell if [ -n "$$GIT_COMMIT" ]; then echo "$$GIT_COMMIT"; else git rev-parse --short HEAD 2>/dev/null || echo "unknown"; fi)
+GIT_DATE := $(shell if [ -n "$$GIT_DATE" ]; then echo "$$GIT_DATE"; else git log -1 --format=%cd --date=short 2>/dev/null || date +"%Y-%m-%d"; fi)
 VERSION := $(shell cat .version 2>/dev/null || echo "0.3.0")
 
 # Add git info to compilation flags

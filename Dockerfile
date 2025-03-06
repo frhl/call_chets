@@ -4,6 +4,11 @@ FROM ubuntu:20.04
 # Set maintainer label
 LABEL maintainer="flassen@well.ox.ac.uk"
 
+# Define build arguments for git information
+ARG GIT_COMMIT=unknown
+ARG GIT_DATE=unknown
+# For DockerHub automated builds, these can be populated from build hooks
+
 # Update and install system dependencies
 RUN apt-get update && apt-get install -y \
     g++ \
@@ -41,6 +46,10 @@ COPY recode_vcf.cpp recode_vcf.cpp
 
 # Set execute permission for make_version.sh
 RUN chmod +x make_version.sh
+
+# Pass git information to the version script
+ENV GIT_COMMIT=$GIT_COMMIT
+ENV GIT_DATE=$GIT_DATE
 
 # Create version file (will be embedded in binaries through makefile)
 RUN ./make_version.sh

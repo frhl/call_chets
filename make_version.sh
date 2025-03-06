@@ -3,11 +3,18 @@
 # Get the version number from major.minor.patch
 VERSION="0.3.3"
 
-# Get the git commit hash
-COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# Use environment variables if available, otherwise try git commands
+if [ -n "$GIT_COMMIT" ]; then
+    COMMIT=$GIT_COMMIT
+else
+    COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+fi
 
-# Get the date
-DATE=$(git log -1 --format=%cd --date=short 2>/dev/null || date +"%Y-%m-%d")
+if [ -n "$GIT_DATE" ]; then
+    DATE=$GIT_DATE
+else
+    DATE=$(git log -1 --format=%cd --date=short 2>/dev/null || date +"%Y-%m-%d")
+fi
 
 # Write version to file
 echo "$VERSION" > .version
