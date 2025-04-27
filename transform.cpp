@@ -19,6 +19,9 @@ void printUsage(const char *path) {
     std::cerr << "  --input/-i <file>          Input VCF/BCF file (supports .vcf, .vcf.gz, .bcf)\n";
     std::cerr << "\nMain Options:\n";
     std::cerr << "  --mode/-m <mode>           Processing mode (default: dominance)\n";
+    std::cerr << "                             Supported modes:\n";
+    std::cerr << "                               - dominance: Dominance deviation encoding\n";
+    std::cerr << "                               - recessive: Set heterozygotes to 0, homozygotes unchanged\n";
     std::cerr << "  --scale-dosages            Enable dosage scaling to [0,2] range\n";
     std::cerr << "  --scale-dosages-factor <f> Apply scaling factor to dosages (default: 1.0)\n";
     std::cerr << "\nAdditional Options:\n";
@@ -39,6 +42,8 @@ void printUsage(const char *path) {
     std::cerr << "    " << path << " --input sample.vcf.gz --scale-dosages --gene-map genes.txt\n";
     std::cerr << "\n  Full output with variant IDs:\n";
     std::cerr << "    " << path << " --input sample.vcf.gz --scale-dosages --all-info --set-variant-id\n";
+    std::cerr << "\n  Using recessive mode:\n";
+    std::cerr << "    " << path << " --input sample.vcf.gz --mode recessive\n";
 }
 
 std::vector<std::string> sortChromosomes(const std::set<std::string> &contigs) {
@@ -205,13 +210,20 @@ void printHeader(const bcf_hdr_t *hdr, const std::vector<std::string> &sortedCon
     int n_samples = bcf_hdr_nsamples(hdr);
 
     std::cout << "##fileformat=VCFv4.2\n";
+    std::cout << "##EncodingMode=" << mode << "\n";
     // output chromosomes
     for (const auto& chr : sortedContigs) {
         std::cout << "##contig=<ID=" << chr << ">\n";
     }
     std::cout << "##INFO=<ID=AC,Number=A,Type=Integer,Description=\"Allele count in genotypes\">\n";
     std::cout << "##INFO=<ID=AN,Number=1,Type=Integer,Description=\"Total number of alleles in called genotypes\">\n";
-    std::cout << "##FORMAT=<ID=DS,Number=1,Type=Float,Description=\"Dosage of the alternate allele based on dominance model\">\n";
+    
+    if (mode == "dominance") {
+        std::cout << "##FORMAT=<ID=DS,Number=1,Type=Float,Description=\"Dosage of the alternate allele based on dominance model\">\n";
+    } else if (mode == "recessive") {
+        std::cout << "##FORMAT=<ID=DS,Number=1,Type=Float,Description=\"Dosage of the alternate allele with recessive encoding (het=0, hom=2)\">\n";
+    }
+    
     if (allInfo) {
         std::cout << "##INFO=<ID=r,Number=1,Type=Float,Description=\"Frequency of bi-allelic references (aa)\">\n";
         std::cout << "##INFO=<ID=h,Number=1,Type=Float,Description=\"Frequency of heterozygotes (Aa)\">\n";
@@ -266,101 +278,115 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
             processSampleGenotypes(gt_ptr, ds_value, has_gt, has_ds, aa_count, Aa_count, AA_count);
         }
 
-        if (AA_count > 0) {
-            double r = static_cast<double>(aa_count) / n_samples;
-            double h = static_cast<double>(Aa_count) / n_samples;
-            double a = static_cast<double>(AA_count) / n_samples;
-
-            double dom_dosage_aa = -h * a;
-            double dom_dosage_Aa = 2 * a * r;
-            double dom_dosage_AA = -h * r;
-
-            std::string variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" + 
-                                  std::to_string(rec->pos + 1) + ":" + 
-                                  rec->d.allele[0] + ":" + rec->d.allele[1];
-                                  
-            if (!geneMap.empty() && geneMap.find(variantId) == geneMap.end()) {
-                if (discardedVariantsCount < warningLimit) {
-                    std::cerr << "Warning: Variant '" << variantId << "' not found in gene map. Discarding.\n";
+        // For dominance mode, we need at least one homozygous alternate
+        if ((mode == "dominance" && AA_count == 0) || (mode != "dominance" && mode != "recessive")) {
+            if (mode == "dominance" && AA_count == 0) {
+                countVariantsWithoutHomAlt++;
+                if (countVariantsWithoutHomAlt <= limit) {
+                    std::cerr << "variant '" << bcf_hdr_id2name(hdr, rec->rid) << ":" << (rec->pos + 1) << ":"
+                             << rec->d.allele[0] << ":" << (rec->n_allele > 1 ? rec->d.allele[1] : ".")  
+                             << "' has no homozygous alternate alleles. Skipping..\n";
                 }
-                discardedVariantsCount++;
-                continue;
             }
+            continue;
+        }
 
-            double localMinDomDosage = globalMinDomDosage;
-            double localMaxDomDosage = globalMaxDomDosage;
-            std::string group;
+        double r = static_cast<double>(aa_count) / n_samples;
+        double h = static_cast<double>(Aa_count) / n_samples;
+        double a = static_cast<double>(AA_count) / n_samples;
 
-            if (!geneMap.empty() && geneMap.find(variantId) != geneMap.end()) {
-                std::string gene = geneMap.at(variantId);
-                localMinDomDosage = geneDosages.at(gene).first;
-                localMaxDomDosage = geneDosages.at(gene).second;
-                group = gene;
+        double dom_dosage_aa = -h * a;
+        double dom_dosage_Aa = 2 * a * r;
+        double dom_dosage_AA = -h * r;
+
+        std::string variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" + 
+                              std::to_string(rec->pos + 1) + ":" + 
+                              rec->d.allele[0] + ":" + rec->d.allele[1];
+                              
+        if (!geneMap.empty() && geneMap.find(variantId) == geneMap.end()) {
+            if (discardedVariantsCount < warningLimit) {
+                std::cerr << "Warning: Variant '" << variantId << "' not found in gene map. Discarding.\n";
             }
+            discardedVariantsCount++;
+            continue;
+        }
 
-            if (setVariantId) {
-                variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" + 
-                           std::to_string(rec->pos + 1) + ":" + 
-                           rec->d.allele[0] + ":" + 
-                           (rec->n_allele > 1 ? rec->d.allele[1] : ".");
-            }
+        double localMinDomDosage = globalMinDomDosage;
+        double localMaxDomDosage = globalMaxDomDosage;
+        std::string group;
 
-            // Output variant information
-            std::cout << bcf_hdr_id2name(hdr, rec->rid) << "\t" 
-                     << (rec->pos + 1) << "\t" 
-                     << variantId << "\t"
-                     << rec->d.allele[0] << "\t";
-            
-            if (rec->n_allele > 1) {
-                std::cout << rec->d.allele[1];
+        if (!geneMap.empty() && geneMap.find(variantId) != geneMap.end()) {
+            std::string gene = geneMap.at(variantId);
+            localMinDomDosage = geneDosages.at(gene).first;
+            localMaxDomDosage = geneDosages.at(gene).second;
+            group = gene;
+        }
+
+        if (setVariantId) {
+            variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" + 
+                       std::to_string(rec->pos + 1) + ":" + 
+                       rec->d.allele[0] + ":" + 
+                       (rec->n_allele > 1 ? rec->d.allele[1] : ".");
+        }
+
+        // Output variant information
+        std::cout << bcf_hdr_id2name(hdr, rec->rid) << "\t" 
+                 << (rec->pos + 1) << "\t" 
+                 << variantId << "\t"
+                 << rec->d.allele[0] << "\t";
+        
+        if (rec->n_allele > 1) {
+            std::cout << rec->d.allele[1];
+        } else {
+            std::cout << ".";
+        }
+
+        std::cout << "\t.\t.\t";
+        std::cout << "AC=" << Aa_count + 2 * AA_count << ";AN=" << 2 * n_samples;
+        
+        if (scaleDosage) {
+            if (!geneMap.empty()) {
+                std::cout << ";localMinDomDosage=" << localMinDomDosage
+                         << ";localMaxDomDosage=" << localMaxDomDosage
+                         << ";group=" << group;
             } else {
-                std::cout << ".";
+                std::cout << ";globalMinDomDosage=" << globalMinDomDosage
+                         << ";globalMaxDomDosage=" << globalMaxDomDosage;
             }
+        }
 
-            std::cout << "\t.\t.\t";
-            std::cout << "AC=" << Aa_count + 2 * AA_count << ";AN=" << 2 * n_samples;
+        if (allInfo) {
+            std::cout << ";r=" << r
+                     << ";h=" << h
+                     << ";a=" << a;
+        }
+
+        std::cout << "\tDS";
+
+        // Output dosage values for each sample
+        for (int i = 0; i < n_samples; ++i) {
+            double dosage = 0.0;
+            int *gt_ptr = has_gt ? gt_arr + i * 2 : NULL;
+            float ds_value = has_ds ? ds_arr[i] : 0.0f;
             
-            if (scaleDosage) {
-                if (!geneMap.empty()) {
-                    std::cout << ";localMinDomDosage=" << localMinDomDosage
-                             << ";localMaxDomDosage=" << localMaxDomDosage
-                             << ";group=" << group;
-                } else {
-                    std::cout << ";globalMinDomDosage=" << globalMinDomDosage
-                             << ";globalMaxDomDosage=" << globalMaxDomDosage;
-                }
-            }
-
-            if (allInfo) {
-                std::cout << ";r=" << r
-                         << ";h=" << h
-                         << ";a=" << a;
-            }
-
-            std::cout << "\tDS";
-
-            // Output dosage values for each sample
-            for (int i = 0; i < n_samples; ++i) {
-                double dosage = 0.0;
-                int *gt_ptr = has_gt ? gt_arr + i * 2 : NULL;
-                float ds_value = has_ds ? ds_arr[i] : 0.0f;
+            if ((has_gt && !bcf_gt_is_missing(gt_ptr[0]) && !bcf_gt_is_missing(gt_ptr[1])) || 
+                (has_ds && !std::isnan(ds_value))) {
                 
-                if ((has_gt && !bcf_gt_is_missing(gt_ptr[0]) && !bcf_gt_is_missing(gt_ptr[1])) || 
-                    (has_ds && !std::isnan(ds_value))) {
-                    
-                    int geno;
-                    if (has_gt && !bcf_gt_is_missing(gt_ptr[0]) && !bcf_gt_is_missing(gt_ptr[1])) {
-                        int allele1 = bcf_gt_allele(gt_ptr[0]);
-                        int allele2 = bcf_gt_allele(gt_ptr[1]);
-                        if (allele1 == 0 && allele2 == 0) geno = 0;
-                        else if (allele1 != allele2) geno = 1;
-                        else if (allele1 > 0 && allele2 > 0) geno = 2;
-                        else continue;
-                    } else {
-                        geno = std::round(ds_value);
-                        if (geno < 0 || geno > 2) continue;
-                    }
+                int geno;
+                if (has_gt && !bcf_gt_is_missing(gt_ptr[0]) && !bcf_gt_is_missing(gt_ptr[1])) {
+                    int allele1 = bcf_gt_allele(gt_ptr[0]);
+                    int allele2 = bcf_gt_allele(gt_ptr[1]);
+                    if (allele1 == 0 && allele2 == 0) geno = 0;
+                    else if (allele1 != allele2) geno = 1;
+                    else if (allele1 > 0 && allele2 > 0) geno = 2;
+                    else continue;
+                } else {
+                    geno = std::round(ds_value);
+                    if (geno < 0 || geno > 2) continue;
+                }
 
+                if (mode == "dominance") {
+                    // Dominance mode encoding
                     if (geno == 0) dosage = -h * a;
                     else if (geno == 1) dosage = 2 * a * r;
                     else if (geno == 2) dosage = -h * r;
@@ -375,24 +401,22 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
                             exit(1);
                         }
                     }
-
-                    if (scalingFactor != 0) {
-                        dosage *= scalingFactor;
-                    }
+                } else if (mode == "recessive") {
+                    // Recessive mode encoding - set heterozygotes to 0, homozygotes unchanged
+                    if (geno == 0) dosage = 0.0;
+                    else if (geno == 1) dosage = 0.0; // Set heterozygotes to 0
+                    else if (geno == 2) dosage = 2.0;
                 }
 
-                std::cout << "\t" << dosage;
+                if (scalingFactor != 0) {
+                    dosage *= scalingFactor;
+                }
             }
 
-            std::cout << std::endl;
-        } else {
-            countVariantsWithoutHomAlt++;
-            if (countVariantsWithoutHomAlt <= limit) {
-                std::cerr << "variant '" << bcf_hdr_id2name(hdr, rec->rid) << ":" << (rec->pos + 1) << ":"
-                         << rec->d.allele[0] << ":" << (rec->n_allele > 1 ? rec->d.allele[1] : ".")  
-                         << "' has no homozygous alternate alleles. Skipping..\n";
-            }
+            std::cout << "\t" << dosage;
         }
+
+        std::cout << std::endl;
     }
 
     if (discardedVariantsCount > warningLimit) {
@@ -400,8 +424,10 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
                   << discardedVariantsCount << std::endl;
     }
 
-    std::cerr << "Note: Total discarded variants without homozygous alternate alleles: " 
-              << countVariantsWithoutHomAlt << std::endl;
+    if (mode == "dominance") {
+        std::cerr << "Note: Total discarded variants without homozygous alternate alleles: " 
+                  << countVariantsWithoutHomAlt << std::endl;
+    }
 
     free(gt_arr);
     free(ds_arr);
@@ -418,6 +444,12 @@ int main(int argc, char *argv[]) {
     std::string geneMapPath;
 
     if (!parseArguments(argc, argv, pathInput, mode, scalingFactor, scaleDosage, setVariantId, allInfo, geneMapPath)) {
+        return 1;
+    }
+    
+    // Validate mode
+    if (mode != "dominance" && mode != "recessive") {
+        std::cerr << "Error: Invalid mode '" << mode << "'. Only 'dominance' or 'recessive' modes are supported." << std::endl;
         return 1;
     }
 
