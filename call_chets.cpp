@@ -92,6 +92,9 @@ void printUsage(const char *path)
     std::cerr << "                                default is 'product'. This argument is only relevant when --score-map is defined." << std::endl;
     std::cerr << "  --show-haplotype-scores/-shs: Optional. Prints the haplotype-specific scores (when '-c' is specified)." << std::endl;
     std::cerr << "  --show-variants/-s          : Optional. Print variants involved in encoding as an extra column." << std::endl;
+    std::cerr << "  --unphased                  : Optional. Treat all genotype data as unphased. Accepts both phased" << std::endl;
+    std::cerr << "                                (e.g., 0|1, 1|0, 1|1) and unphased (e.g., 0/1, 1/0, 1/1) formats," << std::endl;
+    std::cerr << "                                but ignores phase information. Only outputs 'het' (dosage=1) and 'hom' (dosage=2)." << std::endl;
     std::cerr << "  --debug                     : Optional. Print out more information during run" << std::endl;
 
     std::cerr << "\nOutput Format:" << std::endl;
@@ -147,6 +150,7 @@ int main(int argc, char *argv[])
     bool showVariants = false;
     bool showHaplotypeScore = false;
     bool verbose = false;
+    bool unphasedMode = false;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -203,6 +207,10 @@ int main(int argc, char *argv[])
         else if (arg == "--show-variants" || arg == "-sv")
         {
             showVariants = true;
+        }
+        else if (arg == "--unphased")
+        {
+            unphasedMode = true;
         }
         else if (arg == "--debug")
         {
@@ -267,6 +275,17 @@ int main(int argc, char *argv[])
     }
     if (pathScoreMap.empty() && haplotypeCollapseRuleSet){
         std::cerr << "Warning: ignored --haplotype-collapse argument. This can only be used when --score-map is also specified!" << std::endl;
+    }
+
+    // print warnings for unphased mode
+    if (unphasedMode && !pathScoreMap.empty()){
+        std::cerr << "Warning: --score-map is ignored in --unphased mode." << std::endl;
+    }
+    if (unphasedMode && showHaplotypeScore){
+        std::cerr << "Warning: --show-haplotype-scores is ignored in --unphased mode." << std::endl;
+    }
+    if (unphasedMode && (haplotypeCollapseRuleSet || geneCollapseRuleSet)){
+        std::cerr << "Warning: collapse rules are ignored in --unphased mode." << std::endl;
     }
 
     // Mapping variant to gene
@@ -585,11 +604,17 @@ int main(int argc, char *argv[])
         std::string sample, variant, genotype;
         ss >> sample >> variant >> genotype;
 
-        // if header skip line
-        if ((genotype != "1|0" && genotype != "0|1" && genotype != "1|1") && (isFirstLine))
-        {
+        // if header skip line based on mode
+        if (isFirstLine) {
+            bool isPhasedGenotype = (genotype == "1|0" || genotype == "0|1" || genotype == "1|1" || genotype == "0|0");
+            bool isUnphasedGenotype = (genotype == "1/0" || genotype == "0/1" || genotype == "1/1" || genotype == "0/0");
+
+            if (!isPhasedGenotype && !isUnphasedGenotype) {
+                // Likely a header
+                isFirstLine = false;
+                continue;
+            }
             isFirstLine = false;
-            continue;
         }
 
         uniqueSamples.insert(sample);
@@ -598,19 +623,55 @@ int main(int argc, char *argv[])
         if (!isValidVariantFormat(variant)) {
             invalidFormatGenoVariants++;
             if (verbose && invalidFormatGenoVariants <= 10) { // Only show first 10 warnings to avoid flooding
-                std::cerr << "Warning: Line " << genoLineCount << " - Invalid variant format: " << variant 
+                std::cerr << "Warning: Line " << genoLineCount << " - Invalid variant format: " << variant
                           << ". Expected format: chr:pos:ref:alt" << std::endl;
             }
         }
 
-        // Warn user that skipping is happening
-        if (genotype != "1|0" && genotype != "0|1" && genotype != "1|1")
-        {
+        // Check genotype format based on mode
+        bool isPhasedGenotype = (genotype.find('|') != std::string::npos);
+        bool isUnphasedGenotype = (genotype.find('/') != std::string::npos);
+
+        // In unphased mode, accept both phased and unphased but treat as unphased
+        // In phased mode, only accept phased data
+        if (!unphasedMode && isUnphasedGenotype) {
             invalidGenotypeFormat++;
-            if (invalidGenotypeFormat <= 10) { // Limit number of warnings
-                std::cerr << "Warning: Line " << genoLineCount << " - Skipping unexpected genotype value (" << genotype 
-                          << ") in sample " << sample << " for variant " << variant 
-                          << ". Expected values: 1|0, 0|1, or 1|1." << std::endl;
+            if (invalidGenotypeFormat <= 10) {
+                std::cerr << "Warning: Line " << genoLineCount << " - Unphased genotype '" << genotype
+                          << "' detected. Use --unphased flag to process unphased data. Skipping." << std::endl;
+            }
+            else if (invalidGenotypeFormat == 11) {
+                std::cerr << "Warning: Additional unphased genotypes found. Suppressing further warnings." << std::endl;
+            }
+            skippedGenoLines++;
+            continue;
+        }
+
+        // Validate genotype values and normalize separator
+        bool validGenotype = false;
+        std::string normalizedGenotype = genotype;
+
+        if (unphasedMode) {
+            // Accept both phased and unphased, normalize to unphased
+            if (genotype == "0/1" || genotype == "1/0" || genotype == "0|1" || genotype == "1|0") {
+                validGenotype = true;
+                normalizedGenotype = "0/1"; // Normalize to het
+            } else if (genotype == "1/1" || genotype == "1|1") {
+                validGenotype = true;
+                normalizedGenotype = "1/1"; // hom
+            }
+        } else {
+            validGenotype = (genotype == "1|0" || genotype == "0|1" || genotype == "1|1");
+            normalizedGenotype = genotype;
+        }
+
+        if (!validGenotype) {
+            invalidGenotypeFormat++;
+            if (invalidGenotypeFormat <= 10) {
+                std::string expectedFormat = unphasedMode ? "0/1, 1/0, 0|1, 1|0, or 1/1" : "1|0, 0|1, or 1|1";
+                std::cerr << "Warning: Line " << genoLineCount << " - Skipping unexpected genotype value (" << genotype
+                          << ") in sample " << sample << " for variant " << variant
+                          << ". Expected values: " << expectedFormat << "." << std::endl;
             }
             else if (invalidGenotypeFormat == 11) {
                 std::cerr << "Warning: Additional invalid genotype formats found. Suppressing further warnings." << std::endl;
@@ -633,19 +694,30 @@ int main(int argc, char *argv[])
                 std::string gene = geneInfoPair;
                 uniqueVariantsKept.insert(variant);
 
-                // save haplotype
-                if (genotype == "1|0")
-                {
-                    sampleGeneHaplotypeVariant[sample][gene][1].push_back(variant); // Haplotype 1
-                }
-                else if (genotype == "0|1")
-                {
-                    sampleGeneHaplotypeVariant[sample][gene][2].push_back(variant); // Haplotype 2
-                }
-                else if (genotype == "1|1")
-                {
-                    sampleGeneHaplotypeVariant[sample][gene][1].push_back(variant); // Haplotype 1
-                    sampleGeneHaplotypeVariant[sample][gene][2].push_back(variant); // Haplotype 2
+                if (unphasedMode) {
+                    // For unphased mode, use simplified logic (using normalized genotype)
+                    // Use haplotype 0 for het (dosage 1) and haplotype 1 for hom (dosage 2)
+                    if (normalizedGenotype == "0/1") {
+                        sampleGeneHaplotypeVariant[sample][gene][0].push_back(variant); // Mark as het
+                    }
+                    else if (normalizedGenotype == "1/1") {
+                        sampleGeneHaplotypeVariant[sample][gene][1].push_back(variant); // Mark as hom
+                    }
+                } else {
+                    // For phased mode, save haplotype information
+                    if (normalizedGenotype == "1|0")
+                    {
+                        sampleGeneHaplotypeVariant[sample][gene][1].push_back(variant); // Haplotype 1
+                    }
+                    else if (normalizedGenotype == "0|1")
+                    {
+                        sampleGeneHaplotypeVariant[sample][gene][2].push_back(variant); // Haplotype 2
+                    }
+                    else if (normalizedGenotype == "1|1")
+                    {
+                        sampleGeneHaplotypeVariant[sample][gene][1].push_back(variant); // Haplotype 1
+                        sampleGeneHaplotypeVariant[sample][gene][2].push_back(variant); // Haplotype 2
+                    }
                 }
             }
         }
@@ -698,69 +770,105 @@ int main(int argc, char *argv[])
             const auto &haplotypeVariantMap = genePair.second;
             std::string chromosome;
 
-            std::set<std::string> haplotype1Variants = haplotypeVariantMap.count(1) ? std::set<std::string>(haplotypeVariantMap.at(1).begin(), haplotypeVariantMap.at(1).end()) : std::set<std::string>();
-            std::set<std::string> haplotype2Variants = haplotypeVariantMap.count(2) ? std::set<std::string>(haplotypeVariantMap.at(2).begin(), haplotypeVariantMap.at(2).end()) : std::set<std::string>();
-
-            // Safety check for empty variant sets
-            if (haplotype1Variants.empty() && haplotype2Variants.empty()) {
-                if (verbose) {
-                    std::cerr << "Warning: Empty variant sets for sample " << sample << " and gene " << gene << ". Skipping." << std::endl;
-                }
-                continue;
-            }
-
-            // extract chromosome from string
-            std::set<std::string> mergedVariants;
-            std::set_union(haplotype1Variants.begin(), haplotype1Variants.end(), haplotype2Variants.begin(), haplotype2Variants.end(), std::inserter(mergedVariants, mergedVariants.begin()));
-            
-            if (mergedVariants.empty()) {
-                std::cerr << "Error: No valid variants found for sample " << sample << " and gene " << gene << std::endl;
-                continue;
-            }
-            
-            const std::string& variant = *mergedVariants.begin(); // taking the first variant
-            std::stringstream ss(variant);
-            std::getline(ss, chromosome, ':'); // extracting chromosome part
-
             std::string callValue;
             int dosage = 0;
+            std::set<std::string> haplotype1Variants, haplotype2Variants, allVariants;
 
-            if (!haplotype1Variants.empty() && haplotype2Variants.empty())
-            {
-                // Variants only on haplotype 1
-                callValue = (haplotype1Variants.size() == 1) ? "het" : "cis";
-                dosage = 1;
-            }
-            else if (!haplotype2Variants.empty() && haplotype1Variants.empty())
-            {
-                // Variants only on haplotype 2
-                callValue = (haplotype2Variants.size() == 1) ? "het" : "cis";
-                dosage = 1;
-            }
-            else if (!haplotype1Variants.empty() && !haplotype2Variants.empty())
-            {
-                // Variants on both haplotypes
-                std::set<std::string> intersection;
-                std::set_intersection(haplotype1Variants.begin(), haplotype1Variants.end(), haplotype2Variants.begin(), haplotype2Variants.end(), std::inserter(intersection, intersection.begin()));
+            if (unphasedMode) {
+                // Simplified logic for unphased mode
+                std::set<std::string> hetVariants = haplotypeVariantMap.count(0) ? std::set<std::string>(haplotypeVariantMap.at(0).begin(), haplotypeVariantMap.at(0).end()) : std::set<std::string>();
+                std::set<std::string> homVariants = haplotypeVariantMap.count(1) ? std::set<std::string>(haplotypeVariantMap.at(1).begin(), haplotypeVariantMap.at(1).end()) : std::set<std::string>();
 
-                if (!intersection.empty())
-                {
-                    // There is at least one variant in common between the two haplotypes
+                // Merge for chromosome extraction
+                allVariants.insert(hetVariants.begin(), hetVariants.end());
+                allVariants.insert(homVariants.begin(), homVariants.end());
+
+                if (allVariants.empty()) {
+                    if (verbose) {
+                        std::cerr << "Warning: Empty variant sets for sample " << sample << " and gene " << gene << ". Skipping." << std::endl;
+                    }
+                    continue;
+                }
+
+                const std::string& variant = *allVariants.begin();
+                std::stringstream ss(variant);
+                std::getline(ss, chromosome, ':');
+
+                // Determine call value and dosage
+                if (!homVariants.empty()) {
                     callValue = "hom";
                     dosage = 2;
+                } else if (!hetVariants.empty()) {
+                    callValue = "het";
+                    dosage = 1;
+                } else {
+                    callValue = "na";
+                    dosage = 0;
+                }
+
+            } else {
+                // Original phased logic
+                haplotype1Variants = haplotypeVariantMap.count(1) ? std::set<std::string>(haplotypeVariantMap.at(1).begin(), haplotypeVariantMap.at(1).end()) : std::set<std::string>();
+                haplotype2Variants = haplotypeVariantMap.count(2) ? std::set<std::string>(haplotypeVariantMap.at(2).begin(), haplotypeVariantMap.at(2).end()) : std::set<std::string>();
+
+                // Safety check for empty variant sets
+                if (haplotype1Variants.empty() && haplotype2Variants.empty()) {
+                    if (verbose) {
+                        std::cerr << "Warning: Empty variant sets for sample " << sample << " and gene " << gene << ". Skipping." << std::endl;
+                    }
+                    continue;
+                }
+
+                // extract chromosome from string
+                std::set<std::string> mergedVariants;
+                std::set_union(haplotype1Variants.begin(), haplotype1Variants.end(), haplotype2Variants.begin(), haplotype2Variants.end(), std::inserter(mergedVariants, mergedVariants.begin()));
+
+                if (mergedVariants.empty()) {
+                    std::cerr << "Error: No valid variants found for sample " << sample << " and gene " << gene << std::endl;
+                    continue;
+                }
+
+                const std::string& variant = *mergedVariants.begin(); // taking the first variant
+                std::stringstream ss(variant);
+                std::getline(ss, chromosome, ':'); // extracting chromosome part
+
+                if (!haplotype1Variants.empty() && haplotype2Variants.empty())
+                {
+                    // Variants only on haplotype 1
+                    callValue = (haplotype1Variants.size() == 1) ? "het" : "cis";
+                    dosage = 1;
+                }
+                else if (!haplotype2Variants.empty() && haplotype1Variants.empty())
+                {
+                    // Variants only on haplotype 2
+                    callValue = (haplotype2Variants.size() == 1) ? "het" : "cis";
+                    dosage = 1;
+                }
+                else if (!haplotype1Variants.empty() && !haplotype2Variants.empty())
+                {
+                    // Variants on both haplotypes
+                    std::set<std::string> intersection;
+                    std::set_intersection(haplotype1Variants.begin(), haplotype1Variants.end(), haplotype2Variants.begin(), haplotype2Variants.end(), std::inserter(intersection, intersection.begin()));
+
+                    if (!intersection.empty())
+                    {
+                        // There is at least one variant in common between the two haplotypes
+                        callValue = "hom";
+                        dosage = 2;
+                    }
+                    else
+                    {
+                        // Different variants on each haplotype
+                        callValue = "chet";
+                        dosage = 2;
+                    }
                 }
                 else
                 {
-                    // Different variants on each haplotype
-                    callValue = "chet";
-                    dosage = 2;
+                    // Handle the case of no variants, or another unexpected case
+                    callValue = "na";
+                    dosage = 0;
                 }
-            }
-            else
-            {
-                // Handle the case of no variants, or another unexpected case
-                callValue = "na";
-                dosage = 0;
             }
 
             // print the basic information
@@ -772,8 +880,8 @@ int main(int argc, char *argv[])
             float haplotype1Score = 0.0f;
             float haplotype2Score = 0.0f;
 
-            // calculate probability of knockout for each haplotype
-            if (!pathScoreMap.empty())
+            // calculate probability of knockout for each haplotype (skip in unphased mode)
+            if (!pathScoreMap.empty() && !unphasedMode)
             {
 
                 // Only for product we the default
@@ -900,43 +1008,55 @@ int main(int argc, char *argv[])
                 std::cout << "\tg=" << geneCollapseRule << "\t" << geneScore;
                 if (showHaplotypeScore)
                 {
-                    std::cout << "\th=" << haplotypeCollapseRule << "\t" << haplotype1Score << "\t" << haplotype2Score;
+                    std::cout << "\th=" <<haplotypeCollapseRule << "\t" << haplotype1Score << "\t" << haplotype2Score;
                 }
             }
 
             // allow user to show variants even if info file is not specified
             if (showVariants && pathInfoMap.empty())
             {
-
                 std::cout << "\t";
 
-                // For Haplotype 1 variants
-                if (!haplotype1Variants.empty())
-                {
-                    for (auto it = haplotype1Variants.begin(); it != haplotype1Variants.end(); ++it)
+                if (unphasedMode) {
+                    // For unphased mode, just print all variants
+                    for (auto it = allVariants.begin(); it != allVariants.end(); ++it)
                     {
                         std::cout << *it;
-                        if (std::next(it) != haplotype1Variants.end())
+                        if (std::next(it) != allVariants.end())
                         {
                             std::cout << ";";
                         }
                     }
-                }
-
-                if (!haplotype1Variants.empty() && !haplotype2Variants.empty())
-                {
-                    std::cout << "|";
-                }
-
-                // For Haplotype 2 variants
-                if (!haplotype2Variants.empty())
-                {
-                    for (auto it = haplotype2Variants.begin(); it != haplotype2Variants.end(); ++it)
+                } else {
+                    // For phased mode, print haplotype-separated variants
+                    // For Haplotype 1 variants
+                    if (!haplotype1Variants.empty())
                     {
-                        std::cout << *it;
-                        if (std::next(it) != haplotype2Variants.end())
+                        for (auto it = haplotype1Variants.begin(); it != haplotype1Variants.end(); ++it)
                         {
-                            std::cout << ";";
+                            std::cout << *it;
+                            if (std::next(it) != haplotype1Variants.end())
+                            {
+                                std::cout << ";";
+                            }
+                        }
+                    }
+
+                    if (!haplotype1Variants.empty() && !haplotype2Variants.empty())
+                    {
+                        std::cout << "|";
+                    }
+
+                    // For Haplotype 2 variants
+                    if (!haplotype2Variants.empty())
+                    {
+                        for (auto it = haplotype2Variants.begin(); it != haplotype2Variants.end(); ++it)
+                        {
+                            std::cout << *it;
+                            if (std::next(it) != haplotype2Variants.end())
+                            {
+                                std::cout << ";";
+                            }
                         }
                     }
                 }
@@ -944,10 +1064,22 @@ int main(int argc, char *argv[])
 
             if (!pathInfoMap.empty())
             {
-                {
+                std::cout << "\t";
 
-                    std::cout << "\t";
-
+                if (unphasedMode) {
+                    // For unphased mode, print all variants with info
+                    for (auto it = allVariants.begin(); it != allVariants.end(); ++it)
+                    {
+                        std::pair<std::string, std::string> key = std::make_pair(*it, gene);
+                        std::string info = (infoMap.find(key) != infoMap.end()) ? infoMap[key] : "NA";
+                        std::cout << *it << ":" << info;
+                        if (std::next(it) != allVariants.end())
+                        {
+                            std::cout << ";";
+                        }
+                    }
+                } else {
+                    // For phased mode, print haplotype-separated variants with info
                     // For Haplotype 1 variants
                     if (!haplotype1Variants.empty())
                     {

@@ -1,0 +1,4 @@
+SAMPLE1	chr1	GENE1	chet	2	chr1:2000:C:G|chr1:1000:A:T
+SAMPLE2	chr1	GENE1	hom	2	chr1:1000:A:T|chr1:1000:A:T
+SAMPLE3	chr1	GENE2	chet	2	chr2:1000:T:C|chr1:3000:G:A
+SAMPLE4	chr2	GENE3	hom	2	chr2:2000:A:G|chr2:2000:A:G
