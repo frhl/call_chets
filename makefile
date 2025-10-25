@@ -1,7 +1,15 @@
 CC = g++
 CFLAGS = -Wall -O2
-INCLUDES = -I/usr/local/include -I/opt/homebrew/include
-LIBS = -L/usr/local/lib -L/opt/homebrew/lib -lhts -lz
+INCLUDES = -I/usr/local/include
+LIBS = -L/usr/local/lib -lhts -lz
+
+# Add Homebrew paths on macOS if they exist
+ifeq ($(shell uname), Darwin)
+    ifneq (,$(wildcard /opt/homebrew/include))
+        INCLUDES += -I/opt/homebrew/include
+        LIBS += -L/opt/homebrew/lib
+    endif
+endif
 
 # Get version info from environment or git
 GIT_COMMIT := $(shell if [ -n "$$GIT_COMMIT" ]; then echo "$$GIT_COMMIT"; else git rev-parse --short HEAD 2>/dev/null || echo "unknown"; fi)

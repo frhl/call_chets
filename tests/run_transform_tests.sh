@@ -156,8 +156,8 @@ fi
 # Test 2: Dominance mode with DS field
 run_test "dominance_mode_dosage" "test_transform_dosage.vcf" --mode dominance
 
-# Test 3: Dominance mode with scaling enabled
-run_test "dominance_mode_scaled" "test_transform_simple.vcf" --mode dominance --scale-dosages
+# Test 3: Dominance mode with per-variant scaling
+run_test "dominance_mode_scaled" "test_transform_simple.vcf" --mode dominance --scale-per-variant
 
 # Test 4: Dominance mode with variant ID setting
 run_test "dominance_mode_variant_id" "test_transform_simple.vcf" --mode dominance --set-variant-id
@@ -165,26 +165,29 @@ run_test "dominance_mode_variant_id" "test_transform_simple.vcf" --mode dominanc
 # Test 5: Dominance mode with all info
 run_test "dominance_mode_all_info" "test_transform_simple.vcf" --mode dominance --all-info
 
-# Test 6: Dominance mode with gene map
-run_test "dominance_mode_gene_map" "test_transform_simple.vcf" --mode dominance --scale-dosages --gene-map "test_transform_gene_map.txt"
+# Test 6: Dominance mode with global scaling
+run_test "dominance_mode_global_scale" "test_transform_simple.vcf" --mode dominance --scale-globally
 
-# Test 7: Dominance mode with gene map and all options
-run_test "dominance_mode_full" "test_transform_simple.vcf" --mode dominance --scale-dosages --gene-map "test_transform_gene_map.txt" --set-variant-id --all-info
+# Test 7: Dominance mode with group-based scaling
+run_test "dominance_mode_group_scale" "test_transform_simple.vcf" --mode dominance --scale-by-group "test_transform_scale_by_group.txt"
+
+# Test 8: Dominance mode with group-based scaling and all options
+run_test "dominance_mode_full" "test_transform_simple.vcf" --mode dominance --scale-by-group "test_transform_scale_by_group.txt" --set-variant-id --all-info
 
 print_section "Recessive Mode Tests"
 
-# Test 8: Basic recessive mode
+# Test 9: Basic recessive mode
 run_test "recessive_mode_basic" "test_transform_simple.vcf" --mode recessive
 
-# Test 9: Recessive mode with DS field
+# Test 10: Recessive mode with DS field
 run_test "recessive_mode_dosage" "test_transform_dosage.vcf" --mode recessive
 
-# Test 10: Recessive mode with variant ID
+# Test 11: Recessive mode with variant ID
 run_test "recessive_mode_variant_id" "test_transform_simple.vcf" --mode recessive --set-variant-id
 
 print_section "Edge Case Tests"
 
-# Test 11: VCF with no homozygous alternate (should skip in dominance mode)
+# Test 12: VCF with no homozygous alternate (should skip in dominance mode)
 echo -e "\n${YELLOW}Running test: no_homozygous_alternate${NC}"
 output_file="${SCRIPT_DIR}/output_no_homozygous_alternate.vcf"
 $TRANSFORM --input "${SCRIPT_DIR}/test_transform_no_homalt.vcf" --mode dominance > "$output_file" 2>/dev/null
@@ -197,8 +200,8 @@ else
     ((TESTS_FAILED++))
 fi
 
-# Test 12: Scaling factor
-run_test "scaling_factor" "test_transform_simple.vcf" --mode dominance --scale-dosages --scale-dosages-factor 0.5
+# Test 13: Scaling factor with per-variant scaling
+run_test "scaling_factor" "test_transform_simple.vcf" --mode dominance --scale-per-variant --scale-factor 0.5
 
 print_section "Error Handling Tests"
 
