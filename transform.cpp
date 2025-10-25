@@ -264,6 +264,8 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
     const int limit = 5;
     int discardedVariantsCount = 0;
     const int warningLimit = 5;
+    int lowVarianceVariantsCount = 0;
+    const double lowVarianceThreshold = 0.0001; // Warn if any two genotype dosages differ by less than this
 
     bool has_gt = hasFormat(hdr, "GT");
     bool has_ds = hasFormat(hdr, "DS");
@@ -370,6 +372,34 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
                      << ";a=" << a;
         }
 
+        // Check for low variance if scaling is enabled (only in dominance mode)
+        if (mode == "dominance" && scaleDosage) {
+            double scaled_aa = 2 * ((dom_dosage_aa - localMinDomDosage) / (localMaxDomDosage - localMinDomDosage));
+            double scaled_Aa = 2 * ((dom_dosage_Aa - localMinDomDosage) / (localMaxDomDosage - localMinDomDosage));
+            double scaled_AA = 2 * ((dom_dosage_AA - localMinDomDosage) / (localMaxDomDosage - localMinDomDosage));
+
+            // Clamp values
+            if (scaled_aa < 0) scaled_aa = 0;
+            if (scaled_Aa < 0) scaled_Aa = 0;
+            if (scaled_AA < 0) scaled_AA = 0;
+
+            // Check if any two genotype dosages are too close (pairwise comparison)
+            double diff_aa_Aa = std::abs(scaled_aa - scaled_Aa);
+            double diff_aa_AA = std::abs(scaled_aa - scaled_AA);
+            double diff_Aa_AA = std::abs(scaled_Aa - scaled_AA);
+
+            double minDiff = std::min({diff_aa_Aa, diff_aa_AA, diff_Aa_AA});
+
+            if (minDiff < lowVarianceThreshold) {
+                lowVarianceVariantsCount++;
+                if (lowVarianceVariantsCount <= warningLimit) {
+                    std::cerr << "Warning: Variant '" << variantId << "' has genotypes with very similar scaled dosages (min difference="
+                             << minDiff << "). Scaled dosages: aa=" << scaled_aa << ", Aa=" << scaled_Aa
+                             << ", AA=" << scaled_AA << "\n";
+                }
+            }
+        }
+
         std::cout << "\tDS";
 
         // Output dosage values for each sample
@@ -429,13 +459,17 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
     }
 
     if (discardedVariantsCount > warningLimit) {
-        std::cerr << "Note: Total number of variants discarded due to not being present in the gene map: " 
+        std::cerr << "Note: Total number of variants discarded due to not being present in the gene map: "
                   << discardedVariantsCount << std::endl;
     }
 
     if (mode == "dominance") {
-        std::cerr << "Note: Total discarded variants without homozygous alternate alleles: " 
+        std::cerr << "Note: Total discarded variants without homozygous alternate alleles: "
                   << countVariantsWithoutHomAlt << std::endl;
+    }
+
+    if (lowVarianceVariantsCount > 0) {
+        std::cerr << "Note: " << lowVarianceVariantsCount << " variant(s) have genotypes with very similar scaled dosages (min difference < 0.0001). These may have limited power in nonadditive association testing and should be treated with caution." << std::endl;
     }
 
     free(gt_arr);

@@ -112,6 +112,12 @@ The updated transform.cpp now validates inputs **before** producing any output:
   - Example: For 4 samples with genotypes `0/0, 0/1, ./., 1/1`:
     - Only 3 samples used for frequency calculation (n=3)
     - r = 1/3, h = 1/3, a = 1/3 (not r = 1/4, h = 1/4, a = 1/4)
+- **Low variance warning**: When scaling is enabled, warns if any two genotype classes have very similar scaled dosages
+  - Checks pairwise differences: |aa - Aa|, |aa - AA|, |Aa - AA|
+  - Warns if minimum difference < 0.0001 (threshold)
+  - Example: variant with scaled dosages aa=1.0000, Aa=1.00005, AA=0
+    - |aa - Aa| = 0.00005 < 0.0001 → Warning triggered
+  - Such variants have limited power in association testing due to lack of contrast between genotypes
 
 ## Test Output Format
 
