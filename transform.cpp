@@ -126,12 +126,13 @@ bool hasFormat(const bcf_hdr_t *hdr, const char *format) {
     return bcf_hdr_id2int(hdr, BCF_DT_ID, format) >= 0;
 }
 
-void processSampleGenotypes(int *gt_ptr, float ds_value, bool has_gt, bool has_ds, 
-                          int &aa_count, int &Aa_count, int &AA_count) {
+void processSampleGenotypes(int *gt_ptr, float ds_value, bool has_gt, bool has_ds,
+                          int &aa_count, int &Aa_count, int &AA_count, int &non_missing_count) {
     if (has_gt && (!bcf_gt_is_missing(gt_ptr[0]) && !bcf_gt_is_missing(gt_ptr[1]))) {
         // Use GT if available
         int allele1 = bcf_gt_allele(gt_ptr[0]);
         int allele2 = bcf_gt_allele(gt_ptr[1]);
+        non_missing_count++;
         if (allele1 == 0 && allele2 == 0) aa_count++;
         else if (allele1 != allele2) Aa_count++;
         else if (allele1 > 0 && allele2 > 0) AA_count++;
@@ -142,6 +143,7 @@ void processSampleGenotypes(int *gt_ptr, float ds_value, bool has_gt, bool has_d
             std::cerr << "Warning: DS value " << ds_value << " out of range [0,2]. Skipping.\n";
             return;
         }
+        non_missing_count++;
         if (rounded_ds == 0) aa_count++;
         else if (rounded_ds == 1) Aa_count++;
         else if (rounded_ds == 2) AA_count++;
@@ -149,39 +151,43 @@ void processSampleGenotypes(int *gt_ptr, float ds_value, bool has_gt, bool has_d
 }
 
 // Modify calculateGlobalAndGeneDosages function
-void calculateGlobalAndGeneDosages(htsFile *fp, bcf_hdr_t *hdr, double &globalMinDomDosage, 
-    double &globalMaxDomDosage, int n_samples, std::set<std::string> &chromosomes, 
-    const std::map<std::string, std::string> &geneMap, 
-    std::map<std::string, std::pair<double, double>> &geneDosages) {
-    
+void calculateGlobalAndGeneDosages(htsFile *fp, bcf_hdr_t *hdr, double &globalMinDomDosage,
+    double &globalMaxDomDosage, int n_samples, std::set<std::string> &chromosomes,
+    const std::map<std::string, std::string> &geneMap,
+    std::map<std::string, std::pair<double, double>> &geneDosages, bool &hasMissingValues) {
+
     bcf1_t *rec = bcf_init();
     int *gt_arr = NULL, ngt_arr = 0;
     float *ds_arr = NULL;
     int nds_arr = 0;
-    
+
     bool has_gt = hasFormat(hdr, "GT");
     bool has_ds = hasFormat(hdr, "DS");
 
     while (bcf_read(fp, hdr, rec) == 0) {
         chromosomes.insert(bcf_hdr_id2name(hdr, rec->rid));
         bcf_unpack(rec, BCF_UN_STR);
-        
+
         int ngt = has_gt ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
         int nds = has_ds ? bcf_get_format_float(hdr, rec, "DS", &ds_arr, &nds_arr) : 0;
-        
-        int aa_count = 0, Aa_count = 0, AA_count = 0;
-        
+
+        int aa_count = 0, Aa_count = 0, AA_count = 0, non_missing_count = 0;
+
         for (int i = 0; i < n_samples; ++i) {
             int *gt_ptr = has_gt ? gt_arr + i * 2 : NULL;
             float ds_value = has_ds ? ds_arr[i] : 0.0f;
-            
-            processSampleGenotypes(gt_ptr, ds_value, has_gt, has_ds, aa_count, Aa_count, AA_count);
+
+            processSampleGenotypes(gt_ptr, ds_value, has_gt, has_ds, aa_count, Aa_count, AA_count, non_missing_count);
         }
 
-        if (AA_count > 0) {
-            double r = static_cast<double>(aa_count) / n_samples;
-            double h = static_cast<double>(Aa_count) / n_samples;
-            double a = static_cast<double>(AA_count) / n_samples;
+        if (non_missing_count < n_samples) {
+            hasMissingValues = true;
+        }
+
+        if (AA_count > 0 && non_missing_count > 0) {
+            double r = static_cast<double>(aa_count) / non_missing_count;
+            double h = static_cast<double>(Aa_count) / non_missing_count;
+            double a = static_cast<double>(AA_count) / non_missing_count;
 
             double dom_dosage_aa = -h * a;
             double dom_dosage_Aa = 2 * a * r;
@@ -270,12 +276,12 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
         
         if (!has_gt && !has_ds) continue;
 
-        int aa_count = 0, Aa_count = 0, AA_count = 0;
+        int aa_count = 0, Aa_count = 0, AA_count = 0, non_missing_count = 0;
         for (int i = 0; i < n_samples; ++i) {
             int *gt_ptr = has_gt ? gt_arr + i * 2 : NULL;
             float ds_value = has_ds ? ds_arr[i] : 0.0f;
-            
-            processSampleGenotypes(gt_ptr, ds_value, has_gt, has_ds, aa_count, Aa_count, AA_count);
+
+            processSampleGenotypes(gt_ptr, ds_value, has_gt, has_ds, aa_count, Aa_count, AA_count, non_missing_count);
         }
 
         // For dominance mode, we need at least one homozygous alternate
@@ -284,16 +290,19 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
                 countVariantsWithoutHomAlt++;
                 if (countVariantsWithoutHomAlt <= limit) {
                     std::cerr << "variant '" << bcf_hdr_id2name(hdr, rec->rid) << ":" << (rec->pos + 1) << ":"
-                             << rec->d.allele[0] << ":" << (rec->n_allele > 1 ? rec->d.allele[1] : ".")  
+                             << rec->d.allele[0] << ":" << (rec->n_allele > 1 ? rec->d.allele[1] : ".")
                              << "' has no homozygous alternate alleles. Skipping..\n";
                 }
             }
             continue;
         }
 
-        double r = static_cast<double>(aa_count) / n_samples;
-        double h = static_cast<double>(Aa_count) / n_samples;
-        double a = static_cast<double>(AA_count) / n_samples;
+        // Skip variants with no non-missing samples
+        if (non_missing_count == 0) continue;
+
+        double r = static_cast<double>(aa_count) / non_missing_count;
+        double h = static_cast<double>(Aa_count) / non_missing_count;
+        double a = static_cast<double>(AA_count) / non_missing_count;
 
         double dom_dosage_aa = -h * a;
         double dom_dosage_Aa = 2 * a * r;
@@ -342,7 +351,7 @@ void processVcfFile(htsFile *fp, bcf_hdr_t *hdr, const std::string &mode, double
         }
 
         std::cout << "\t.\t.\t";
-        std::cout << "AC=" << Aa_count + 2 * AA_count << ";AN=" << 2 * n_samples;
+        std::cout << "AC=" << Aa_count + 2 * AA_count << ";AN=" << 2 * non_missing_count;
         
         if (scaleDosage) {
             if (!geneMap.empty()) {
@@ -468,20 +477,62 @@ int main(int argc, char *argv[]) {
 
     int n_samples = bcf_hdr_nsamples(hdr);
 
+    // Validate that VCF has samples
+    if (n_samples == 0) {
+        std::cerr << "Error: VCF file has no samples." << std::endl;
+        bcf_hdr_destroy(hdr);
+        bcf_close(fp);
+        return 1;
+    }
+
+    // Validate that VCF has GT or DS format fields
+    bool has_gt = hasFormat(hdr, "GT");
+    bool has_ds = hasFormat(hdr, "DS");
+    if (!has_gt && !has_ds) {
+        std::cerr << "Error: VCF file must contain either GT (genotype) or DS (dosage) format fields." << std::endl;
+        bcf_hdr_destroy(hdr);
+        bcf_close(fp);
+        return 1;
+    }
+
     double globalMinDomDosage = std::numeric_limits<double>::max();
     double globalMaxDomDosage = std::numeric_limits<double>::lowest();
     std::set<std::string> chromosomes;
     std::map<std::string, std::string> geneMap;
     std::map<std::string, std::pair<double, double>> geneDosages;
+    bool hasMissingValues = false;
 
+    // Validate and load gene map if specified
     if (!geneMapPath.empty()) {
         geneMap = readGeneMap(geneMapPath);
+        if (geneMap.empty()) {
+            std::cerr << "Error: Gene map file is empty or contains no valid data: " << geneMapPath << std::endl;
+            bcf_hdr_destroy(hdr);
+            bcf_close(fp);
+            return 1;
+        }
         for (const auto &pair : geneMap) {
             geneDosages[pair.second] = {std::numeric_limits<double>::max(), std::numeric_limits<double>::lowest()};
         }
     }
 
-    calculateGlobalAndGeneDosages(fp, hdr, globalMinDomDosage, globalMaxDomDosage, n_samples, chromosomes, geneMap, geneDosages);
+    calculateGlobalAndGeneDosages(fp, hdr, globalMinDomDosage, globalMaxDomDosage, n_samples, chromosomes, geneMap, geneDosages, hasMissingValues);
+
+    // Validate that we found at least one variant
+    if (chromosomes.empty()) {
+        std::cerr << "Error: VCF file contains no variants." << std::endl;
+        bcf_hdr_destroy(hdr);
+        bcf_close(fp);
+        return 1;
+    }
+
+    // For dominance mode, validate we found variants with homozygous alternates
+    if (mode == "dominance" && globalMinDomDosage == std::numeric_limits<double>::max()) {
+        std::cerr << "Error: No variants with homozygous alternate alleles found. Dominance encoding requires at least one variant with AA genotype." << std::endl;
+        bcf_hdr_destroy(hdr);
+        bcf_close(fp);
+        return 1;
+    }
 
     std::vector<std::string> sortedContigs = sortChromosomes(chromosomes);
     bcf_close(fp);
@@ -501,6 +552,10 @@ int main(int argc, char *argv[]) {
 
     bcf_hdr_destroy(hdr);
     bcf_close(fp);
+
+    if (hasMissingValues) {
+        std::cerr << "Note: VCF contained missing genotype values. Frequencies were calculated using only non-missing samples." << std::endl;
+    }
 
     return 0;
 }
