@@ -34,9 +34,9 @@ docker run -it call_chets:latest
 ### 1/3. Prepare Data
 Extract phased genotypes from your VCF:
 ```bash
-bcftools view input.vcf.gz -Ou | \
-  bcftools query -f'[%SAMPLE %CHROM:%POS:%REF:%ALT %GT\n]' | \
-  gzip > genotypes.txt.gz
+bcftools view trio.vcf --max-af 0.01 -Ou | \
+  bcftools query -i'GT="alt"' -f'[%SAMPLE %CHROM:%POS:%REF:%ALT %GT\n]' | \
+  gzip > trio.phased_sites.txt.gz
 ```
 
 ### 2/3. Call Variants
