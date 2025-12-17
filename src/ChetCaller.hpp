@@ -57,6 +57,12 @@ public:
    * @param rule Rule name: "product", "additive", "min", "max". Default:
    * "product".
    */
+  /**
+   * @brief Set the rule for compressing dosages within a haplotype.
+   *
+   * @param rule Rule name: "product", "additive", "min", "max". Default:
+   * "product".
+   */
   void setHaplotypeCollapseRule(const std::string &rule);
 
   /**
@@ -93,9 +99,46 @@ public:
   /**
    * @brief Enable verbose logging to stderr.
    *
-   * @param verbose If true, progress and warnings are printed to stderr.
+   * @param v If true, detailed logs are printed.
    */
-  void setVerbose(bool verbose);
+  void setVerbose(bool v);
+
+  /**
+   * @brief Prints the collected runtime statistics to stderr.
+   */
+  void printStats();
+
+  /**
+   * @brief structure to hold runtime statistics.
+   */
+  struct RunStats {
+    // Timing
+    double timeVCFParse = 0.0;
+    double timeProcessing = 0.0;
+
+    // Gene Map
+    long nGeneMapLines = 0;
+    long nGenesMapped = 0;
+    long nVariantsMapped = 0;
+
+    // Variants
+    long nVariantsTotal = 0;
+    long nVariantsKept = 0;
+    long nVariantsFiltered = 0;
+    long nSitesRemovedInMainPanel = 0;
+
+    // Genotypes
+    long long nGenotypesTotal = 0;
+    long long nHomRef = 0;
+    long long nHet = 0;
+    long long nHomAlt = 0;
+    long long nMissing = 0;
+
+    // Haplotypes (for phased mode)
+    long long nHaplotypesTotal = 0;
+    long long nHaplotypesRef = 0;
+    long long nHaplotypesAlt = 0;
+  } stats;
 
   // section: Data Loading
 

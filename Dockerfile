@@ -48,16 +48,13 @@ RUN chmod +x scripts/make_version.sh
 ENV GIT_COMMIT=$GIT_COMMIT
 ENV GIT_DATE=$GIT_DATE
 
-# Create version file (will be embedded in binaries through makef# Build
-RUN make
-# No need to move binaries as make now outputs to bin/ and Dockerfile WORKDIR is /usr/src/app
-# However, if we want them in path:
-ENV PATH="/usr/src/app/bin:${PATH}"
-RUN mv bin/transform /usr/local/bin/.
-RUN mv bin/count_by_gene /usr/local/bin/.
-RUN mv bin/recode_vcf /usr/local/bin/.
+# Build and Install
+# Pass GIT_COMMIT and GIT_DATE variables to make
+RUN make GIT_COMMIT=$GIT_COMMIT GIT_DATE=$GIT_DATE
+RUN make install
 
+# No need to manually move binaries or set PATH if installing to /usr/local/bin (default)
+# But strictly, /usr/local/bin is usually in PATH.
 
-# Set default command to R when the container starts
-#CMD ["bash"]
-
+# Set default command
+CMD ["interpret_phase", "--help"]

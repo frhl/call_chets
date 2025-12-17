@@ -1,5 +1,8 @@
+#include "logging.hpp"
+#include "version.hpp"
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -10,45 +13,9 @@
 #include <vector>
 #include <zlib.h>
 
-#ifndef GIT_COMMIT
-#define GIT_COMMIT "unknown"
-#endif
-
-#ifndef GIT_DATE
-#define GIT_DATE "unknown"
-#endif
-
-#ifndef VERSION
-#define VERSION "0.3.0"
-#endif
-
-std::string getVersion() {
-  // Use preprocessor macros for version and git info
-  std::string version = VERSION;
-  std::string gitCommit = GIT_COMMIT;
-  std::string gitDate = GIT_DATE;
-
-  // Try to read from .version file if it exists
-  std::ifstream versionFile(".version");
-  if (versionFile.is_open()) {
-    std::string fileVersion;
-    if (std::getline(versionFile, fileVersion) && !fileVersion.empty()) {
-      version = fileVersion;
-    }
-    versionFile.close();
-  }
-
-  // Construct full version string
-  std::string versionInfo =
-      version + " / commit = " + gitCommit + " / release = " + gitDate;
-  return versionInfo;
-}
-
-#include <ctime>
-
 void printUsage(const char *path) {
   // Get version info
-  std::string version = getVersion();
+  std::string version = getFullVersion();
 
   // Get current date and time
   std::time_t now = std::time(nullptr);
@@ -188,19 +155,36 @@ int main(int argc, char *argv[]) {
     } else if (arg == "--all-info") {
       allInfo = true;
     } else {
-      std::cerr << "Error! Unknown or incomplete argument: " << arg
-                << std::endl;
+      std::cerr << "Error! Unknown argument: " << arg << std::endl;
       printUsage(argv[0]);
       return 1;
     }
   }
 
   if (pathInput.empty() || pathSamples.empty()) {
-    std::cerr << "Error! Both --input and --samples must be provided."
-              << std::endl;
+    std::cerr << "Error! --input and --samples are required." << std::endl;
     printUsage(argv[0]);
     return 1;
   }
+
+  std::map<std::string, std::string> files;
+  files["Input"] = pathInput;
+  files["Samples"] = pathSamples;
+
+  std::map<std::string, std::string> params;
+  params["Mode"] = mode;
+  params["Scale Dosage"] = scaleDosage ? "Yes" : "No";
+  if (minAC > 0)
+    params["Min AC"] = std::to_string(minAC);
+  if (maxAC < INT_MAX)
+    params["Max AC"] = std::to_string(maxAC);
+  if (!forcedChromosomeName.empty())
+    params["Force Chr"] = forcedChromosomeName;
+  if (globalDomDosage)
+    params["Global Dom"] = "Yes";
+
+  call_chets::printHeader("ENCODE_VCF", "vcf encoder for CALL_CHETS output",
+                          files, params);
 
   gzFile longFile = gzopen(pathInput.c_str(), "rb");
   std::ifstream sampleFile(pathSamples);

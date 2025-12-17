@@ -1,3 +1,4 @@
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -5,50 +6,13 @@
 #include <vector>
 #include <zlib.h>
 
-#ifndef GIT_COMMIT
-#define GIT_COMMIT "unknown"
-#endif
-
-#ifndef GIT_DATE
-#define GIT_DATE "unknown"
-#endif
-
-#ifndef VERSION
-#define VERSION "0.3.0"
-#endif
-
-std::string getVersion() {
-  // Use preprocessor macros for version and git info
-  std::string version = VERSION;
-  std::string gitCommit = GIT_COMMIT;
-  std::string gitDate = GIT_DATE;
-
-  // Try to read from .version file if it exists
-  std::ifstream versionFile(".version");
-  if (versionFile.is_open()) {
-    std::string fileVersion;
-    if (std::getline(versionFile, fileVersion) && !fileVersion.empty()) {
-      version = fileVersion;
-    }
-    versionFile.close();
-  }
-
-  // Construct full version string
-  std::string versionInfo =
-      version + " / commit = " + gitCommit + " / release = " + gitDate;
-  return versionInfo;
-}
-
-#include <ctime>
-
 #include "ChetCaller.hpp"
+#include "logging.hpp"
+#include "version.hpp"
 
 // Function to print usage
 void printUsage(const char *path) {
-  // Get version info (assumed to be available via getVersion() which we keep or
-  // move) For simplicity, reusing the existing structure but shortened.
-  extern std::string getVersion();
-  std::string version = getVersion();
+  std::string version = getFullVersion();
 
   std::time_t now = std::time(nullptr);
   char timestr[100];
@@ -157,6 +121,39 @@ int main(int argc, char *argv[]) {
   call_chets::ChetCaller caller;
   caller.setVerbose(verbose);
   caller.setUnphasedMode(unphasedMode);
+  caller.setShowVariants(showVariants);
+  caller.setShowHaplotypeScores(showHaplotypeScore);
+
+  if (haplotypeCollapseRuleSet)
+    caller.setHaplotypeCollapseRule(haplotypeCollapseRule);
+  if (geneCollapseRuleSet)
+    caller.setGeneCollapseRule(geneCollapseRule);
+
+  // Prepare logging
+  std::map<std::string, std::string> files;
+  files["Genotypes"] = pathGeno;
+  files["Gene Map"] = pathMap;
+  if (!pathInfoMap.empty())
+    files["Info Map"] = pathInfoMap;
+  if (!pathScoreMap.empty())
+    files["Score Map"] = pathScoreMap;
+
+  std::map<std::string, std::string> params;
+  params["Mode"] = unphasedMode ? "Unphased" : "Phased";
+  params["Verbose"] = verbose ? "Yes" : "No";
+  params["Show Variants"] = showVariants ? "Yes" : "No";
+
+  if (!unphasedMode && !pathScoreMap.empty()) {
+    params["Haplo Collapse"] = haplotypeCollapseRule;
+    params["Gene Collapse"] = geneCollapseRule;
+    params["Show Scores"] = showHaplotypeScore ? "Yes" : "No";
+  }
+
+  call_chets::printHeader("CALL_CHETS",
+                          "compound heterozygosity and cis variant caller",
+                          files, params);
+
+  std::cerr << "Reading genotype data..." << std::endl;
 
   // Validate and set collapse rules
   if (haplotypeCollapseRuleSet) {
@@ -229,6 +226,9 @@ int main(int argc, char *argv[]) {
   // Process
   if (!caller.processGenotypes(pathGeno))
     return 1;
+
+  // Print run stats
+  caller.printStats();
 
   // Output
   caller.printResults();

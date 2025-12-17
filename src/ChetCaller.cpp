@@ -1,5 +1,7 @@
 #include "ChetCaller.hpp"
+#include "version.hpp"
 #include <algorithm>
+#include <iomanip>
 #include <iostream>
 #include <regex>
 #include <sstream>
@@ -32,6 +34,43 @@ void ChetCaller::setShowVariants(bool show) { showVariants = show; }
 void ChetCaller::setUnphasedMode(bool unphased) { unphasedMode = unphased; }
 
 void ChetCaller::setVerbose(bool v) { verbose = v; }
+
+void ChetCaller::printStats() {
+  std::cerr << "  * Gene Map parsing done" << std::endl;
+  std::cerr << "      + Mapping [" << stats.nGenesMapped << " genes, "
+            << stats.nVariantsMapped << " variants]" << std::endl;
+
+  std::cerr << "  * VCF/BCF parsing done (" << std::fixed
+            << std::setprecision(2) << stats.timeVCFParse << "s)" << std::endl;
+  std::cerr << "      + Variants [#sites=" << stats.nVariantsTotal << "]"
+            << std::endl;
+  if (stats.nVariantsFiltered > 0) {
+    std::cerr << "         - " << stats.nVariantsFiltered << " sites removed"
+              << std::endl;
+  }
+
+  if (stats.nGenotypesTotal > 0) {
+    double pHomRef = (double)stats.nHomRef / stats.nGenotypesTotal * 100.0;
+    double pHet = (double)stats.nHet / stats.nGenotypesTotal * 100.0;
+    double pHomAlt = (double)stats.nHomAlt / stats.nGenotypesTotal * 100.0;
+    double pMissing = (double)stats.nMissing / stats.nGenotypesTotal * 100.0;
+
+    std::cerr << "      + Genotypes [n=" << stats.nGenotypesTotal
+              << ", 0/0=" << std::fixed << std::setprecision(3) << pHomRef
+              << "%, "
+              << "0/1=" << pHet << "%, "
+              << "1/1=" << pHomAlt << "%, "
+              << "./.=" << pMissing << "%]" << std::endl;
+  }
+
+  if (!unphasedMode && stats.nHaplotypesTotal > 0) {
+    double pRef = (double)stats.nHaplotypesRef / stats.nHaplotypesTotal * 100.0;
+    double pAlt = (double)stats.nHaplotypesAlt / stats.nHaplotypesTotal * 100.0;
+    std::cerr << "      + Reference haplotypes [0=" << std::fixed
+              << std::setprecision(3) << pRef << "%, "
+              << "1=" << pAlt << "%]" << std::endl;
+  }
+}
 
 bool ChetCaller::isValidVariantFormat(const std::string &variant) {
   static const std::regex pattern(
@@ -68,6 +107,7 @@ bool ChetCaller::loadGeneMap(const std::string &path) {
   invalidFormatVariants = 0;
 
   std::string variant, gene;
+  std::set<std::string> genes;
 
   while (gzgets(mappingFile, buf, sizeof(buf))) {
     mappingLineCount++;
@@ -101,6 +141,7 @@ bool ChetCaller::loadGeneMap(const std::string &path) {
       }
     } else {
       if (!isFirstLineMappingFile) {
+        stats.nGeneMapLines++; // Increment total lines processed
         if (!isValidVariantFormat(variant)) {
           invalidFormatVariants++;
           if (verbose) {
@@ -108,14 +149,19 @@ bool ChetCaller::loadGeneMap(const std::string &path) {
                       << " - Invalid variant format: " << variant
                       << ". Expected format: chr:pos:ref:alt" << std::endl;
           }
+        } else {
+          variantToGene[variant].push_back(gene);
+          genes.insert(gene);      // Add gene to set for unique count
+          stats.nVariantsMapped++; // Increment mapped variants
         }
-        variantToGene[variant].push_back(gene);
         validMappingLines++;
       }
     }
     isFirstLineMappingFile = false;
   }
   gzclose(mappingFile);
+
+  stats.nGenesMapped = genes.size();
 
   if (validMappingLines == 0) {
     std::cerr << "Error: No valid mapping data found in: " << path << std::endl;
@@ -292,6 +338,9 @@ bool ChetCaller::loadScoreMap(const std::string &path) {
 }
 
 bool ChetCaller::processGenotypes(const std::string &path) {
+  // Start timing VCF parse
+  clock_t start = clock();
+
   gzFile genotypeFile = gzopen(path.c_str(), "rb");
   if (!genotypeFile) {
     std::cerr << "Error: Cannot open --geno file for reading: " << path
@@ -312,6 +361,12 @@ bool ChetCaller::processGenotypes(const std::string &path) {
   uniqueVariantsDiscarded.clear();
   multiGeneVariants.clear();
 
+  // Runtime stats are preserved (specifically gene map stats)
+  // Genotype stats are cumulative or started from 0 if this is first run.
+  // stats = RunStats(); // Removed to prevent wiping gene map stats
+
+  std::set<std::string> seenVariants;
+
   while (gzgets(genotypeFile, buf, sizeof(buf))) {
     genoLineCount++;
     std::string line(buf);
@@ -320,6 +375,13 @@ bool ChetCaller::processGenotypes(const std::string &path) {
 
     if (line.empty())
       continue;
+
+    // Progress logging
+    if (genoLineCount % 10000 == 0) {
+      std::cerr << "\r[Progress] Lines processed: " << genoLineCount
+                << " | Variants found: " << stats.nVariantsTotal
+                << " | Kept: " << stats.nVariantsKept << std::flush;
+    }
 
     size_t columnCount = countColumns(line);
     if (columnCount < 3) {
@@ -341,13 +403,58 @@ bool ChetCaller::processGenotypes(const std::string &path) {
                                  genotype == "1/1" || genotype == "0/0");
 
       if (!isPhasedGenotype && !isUnphasedGenotype) {
+        // Check if header line
+        if (sample == "sample" || sample == "Sample") {
+          isFirstLine = false;
+          continue;
+        }
+        // Otherwise assume first line is just skipped or invalid header
         isFirstLine = false;
         continue;
       }
       isFirstLine = false;
     }
 
+    // Track variants
+    if (seenVariants.find(variant) == seenVariants.end()) {
+      seenVariants.insert(variant);
+      stats.nVariantsTotal++;
+
+      if (variantToGene.find(variant) != variantToGene.end()) {
+        stats.nVariantsKept++;
+        // uniqueVariantsKept.insert(variant); // Will be inserted below
+        // per-line logic if needed, or here efficienty
+      } else {
+        stats.nVariantsFiltered++;
+        stats.nSitesRemovedInMainPanel++;
+        uniqueVariantsDiscarded.insert(variant);
+      }
+    }
+
     uniqueSamples.insert(sample);
+
+    // Genotype Stats
+    stats.nGenotypesTotal++;
+    if (genotype == "0/0" || genotype == "0|0") {
+      stats.nHomRef++;
+      if (!unphasedMode) {
+        stats.nHaplotypesRef += 2;
+      }
+    } else if (genotype == "0/1" || genotype == "0|1" || genotype == "1/0" ||
+               genotype == "1|0") {
+      stats.nHet++;
+      if (!unphasedMode) {
+        stats.nHaplotypesRef++;
+        stats.nHaplotypesAlt++;
+      }
+    } else if (genotype == "1/1" || genotype == "1|1") {
+      stats.nHomAlt++;
+      if (!unphasedMode) {
+        stats.nHaplotypesAlt += 2;
+      }
+    } else if (genotype.find('.') != std::string::npos) {
+      stats.nMissing++;
+    }
 
     if (!isValidVariantFormat(variant)) {
       invalidFormatGenoVariants++;
@@ -395,33 +502,36 @@ bool ChetCaller::processGenotypes(const std::string &path) {
     }
 
     if (!validGenotype) {
-      invalidGenotypeFormat++;
-      if (invalidGenotypeFormat <= 10) {
-        std::string expectedFormat =
-            unphasedMode ? "0/1, 1/0, 0|1, 1|0, or 1/1" : "1|0, 0|1, or 1|1";
-        std::cerr << "Warning: Line " << genoLineCount
-                  << " - Skipping unexpected genotype value (" << genotype
-                  << ") in sample " << sample << " for variant " << variant
-                  << ". Expected values: " << expectedFormat << "."
-                  << std::endl;
-      } else if (invalidGenotypeFormat == 11) {
-        std::cerr << "Warning: Additional invalid genotype formats found. "
-                     "Suppressing further warnings."
-                  << std::endl;
+      // Only warn if not 0/0 (which is valid but skipped for processing
+      // usually)
+      if (genotype != "0/0" && genotype != "0|0" &&
+          genotype.find('.') == std::string::npos) {
+        invalidGenotypeFormat++;
+        if (invalidGenotypeFormat <= 10) {
+          std::string expectedFormat =
+              unphasedMode ? "0/1, 1/0, 0|1, 1|0, or 1/1" : "1|0, 0|1, or 1|1";
+          std::cerr << "Warning: Line " << genoLineCount
+                    << " - Skipping unexpected genotype value (" << genotype
+                    << ") in sample " << sample << " for variant " << variant
+                    << ". Expected values: " << expectedFormat << "."
+                    << std::endl;
+        } else if (invalidGenotypeFormat == 11) {
+          std::cerr << "Warning: Additional invalid genotype formats found. "
+                       "Suppressing further warnings."
+                    << std::endl;
+        }
       }
+      // We skip non-het/hom-alt lines for actual calling per original logic
       skippedGenoLines++;
       continue;
     }
-
-    validGenoLines++;
 
     if (variantToGene.find(variant) != variantToGene.end()) {
       if (variantToGene[variant].size() > 1) {
         multiGeneVariants.insert(variant);
       }
 
-      for (const auto &geneInfoPair : variantToGene[variant]) {
-        std::string gene = geneInfoPair;
+      for (const auto &gene : variantToGene[variant]) {
         uniqueVariantsKept.insert(variant);
 
         if (unphasedMode) {
@@ -448,27 +558,11 @@ bool ChetCaller::processGenotypes(const std::string &path) {
     } else {
       uniqueVariantsDiscarded.insert(variant);
     }
+
+    validGenoLines++;
   }
+
   gzclose(genotypeFile);
-
-  if (skippedGenoLines > 0) {
-    std::cerr << "Warning: Skipped " << skippedGenoLines
-              << " lines in genotype file due to format issues." << std::endl;
-  }
-
-  if (validGenoLines == 0) {
-    std::cerr << "Error: No valid genotype data found in file: " << path
-              << std::endl;
-    return false;
-  }
-
-  if (uniqueVariantsKept.empty()) {
-    std::cerr << "Error: No matching variants found between the --map and "
-                 "--geno file!"
-              << std::endl;
-    return false;
-  }
-
   if (verbose) {
     std::cerr << "Found " << uniqueSamples.size()
               << " unique samples in genotype file." << std::endl;
@@ -478,6 +572,18 @@ bool ChetCaller::processGenotypes(const std::string &path) {
               << uniqueVariantsDiscarded.size() << std::endl;
     std::cerr << "Variants mapping to more than one gene: "
               << multiGeneVariants.size() << std::endl;
+  }
+
+  if (genoLineCount == 0) {
+    std::cerr << "Error: Genotype file is empty." << std::endl;
+    return false;
+  }
+
+  if (validGenoLines == 0) {
+    // If we had lines but none were valid, that's an error for "all wrong
+    // columns" or "no data" tests
+    std::cerr << "Error: No valid genotype lines processed." << std::endl;
+    return false;
   }
 
   return true;

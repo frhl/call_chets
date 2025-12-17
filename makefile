@@ -1,5 +1,10 @@
-# Version determination: Try .version file first (for Docker), then git, then date
+# Version determination
 VERSION_FILE := $(shell cat .version 2>/dev/null)
+
+# Try to get git info regardless of .version file
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+GIT_DATE ?= $(shell git log -1 --format=%cd --date=short 2>/dev/null || date +%Y-%m-%d)
+
 ifneq ($(VERSION_FILE),)
     GIT_VERSION := $(VERSION_FILE)
 else
@@ -10,7 +15,7 @@ endif
 CXX := g++
 
 # Compiler flags
-CXXFLAGS := -O2 -std=c++11 -Wall -DVERSION=\"$(GIT_VERSION)\"
+CXXFLAGS := -O2 -std=c++11 -Wall -DVERSION=\"$(GIT_VERSION)\" -DGIT_COMMIT=\"$(GIT_COMMIT)\" -DGIT_DATE=\"$(GIT_DATE)\"
 
 # Include directories
 INCLUDES := -I./src

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <htslib/hts.h>
 #include <htslib/vcf.h>
@@ -12,9 +13,25 @@
 #include <string>
 #include <vector>
 
+#include "logging.hpp"
+#include "version.hpp"
+
 void printUsage(const char *path) {
-  std::cerr << "\nProgram: Transform genotypes/dosages to dominance encoding\n";
-  std::cerr << "Usage: " << path << " --input <input.vcf.gz> [options]\n";
+  // Get version info
+  std::string version = getFullVersion();
+
+  // Get current date and time
+  std::time_t now = std::time(nullptr);
+  char timestr[100];
+  std::strftime(timestr, sizeof(timestr), "%d/%m/%Y - %H:%M:%S",
+                std::localtime(&now));
+
+  std::cerr
+      << "\n[ORTHOGONALIZE] Transform genotypes/dosages to dominance encoding"
+      << "\n  * Version       : " << version
+      << "\n  * Run date      : " << timestr << "\n";
+
+  std::cerr << "\nUsage: " << path << " --input <input.vcf.gz> [options]\n";
   std::cerr << "\nRequired Options:\n";
   std::cerr << "  --input/-i <file>          Input VCF/BCF file (supports "
                ".vcf, .vcf.gz, .bcf)\n";
@@ -105,7 +122,7 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
     std::string arg = argv[i];
     if (arg == "--help" || arg == "-h") {
       printUsage(argv[0]);
-      return false;
+      exit(0);
     } else if ((arg == "--input" || arg == "-i") && i + 1 < argc) {
       pathInput = argv[++i];
     } else if ((arg == "--mode" || arg == "-m") && i + 1 < argc) {
@@ -131,10 +148,26 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
   }
 
   if (pathInput.empty()) {
-    std::cerr << "Error! --input must be provided." << std::endl;
+    std::cerr << "Error: --input is required\n";
     printUsage(argv[0]);
-    return false;
+    return 1;
   }
+
+  std::map<std::string, std::string> files;
+  files["Input"] = pathInput;
+  if (!scaleByGroupPath.empty())
+    files["Group File"] = scaleByGroupPath;
+
+  std::map<std::string, std::string> params;
+  params["Mode"] = mode;
+  params["Scale Factor"] = std::to_string(scalingFactor);
+  params["Scale Variant"] = scalePerVariant ? "Yes" : "No";
+  params["Scale Global"] = scaleGlobally ? "Yes" : "No";
+  params["All Info"] = allInfo ? "Yes" : "No";
+
+  call_chets::printHeader("ORTHOGONALIZE",
+                          "Transform genotypes/dosages to dominance encoding",
+                          files, params);
 
   // Check for mutually exclusive scaling options
   int scalingModes = (scalePerVariant ? 1 : 0) + (scaleGlobally ? 1 : 0) +
@@ -362,6 +395,8 @@ void processVcfFile(
   int discardedVariantsCount = 0;
   const int warningLimit = 5;
   int lowVarianceVariantsCount = 0;
+  long totalVariants = 0;
+  long keptVariants = 0;
   const double lowVarianceThreshold =
       0.0001; // Warn if any two genotype dosages differ by less than this
 
@@ -369,6 +404,7 @@ void processVcfFile(
   bool has_ds = hasFormat(hdr, "DS");
 
   while (bcf_read(fp, hdr, rec) == 0) {
+    totalVariants++;
     bcf_unpack(rec, BCF_UN_STR);
 
     int ngt = has_gt ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
@@ -377,6 +413,14 @@ void processVcfFile(
 
     if (!has_gt && !has_ds)
       continue;
+
+    // Progress logging every 1000 variants
+    if (totalVariants % 1000 == 0) {
+      std::cerr << "\r[Progress] Processed: " << totalVariants
+                << " | Kept: " << keptVariants << " | Discarded: "
+                << (discardedVariantsCount + countVariantsWithoutHomAlt)
+                << std::flush;
+    }
 
     // Ensure successful retrieval
     if (ngt < 0)
@@ -415,6 +459,8 @@ void processVcfFile(
     double r = static_cast<double>(aa_count) / non_missing_count;
     double h = static_cast<double>(Aa_count) / non_missing_count;
     double a = static_cast<double>(AA_count) / non_missing_count;
+
+    keptVariants++;
 
     double dom_dosage_aa = -h * a;
     double dom_dosage_Aa = 2 * a * r;
@@ -600,30 +646,33 @@ void processVcfFile(
     std::cout << std::endl;
   }
 
-  if (discardedVariantsCount > warningLimit) {
-    std::cerr << "Note: Total number of variants discarded due to not being "
-                 "present in the group map: "
-              << discardedVariantsCount << std::endl;
-  }
-
-  if (mode == "dominance") {
-    std::cerr << "Note: Total discarded variants without homozygous alternate "
-                 "alleles: "
-              << countVariantsWithoutHomAlt << std::endl;
-  }
-
-  if (lowVarianceVariantsCount > 0) {
-    std::cerr
-        << "Note: " << lowVarianceVariantsCount
-        << " variant(s) have genotypes with very similar scaled dosages (min "
-           "difference < 0.0001). These may have limited power in nonadditive "
-           "association testing and should be treated with caution."
-        << std::endl;
-  }
-
   free(gt_arr);
   free(ds_arr);
   bcf_destroy(rec);
+
+  // Print runtime statistics
+  std::cerr << std::endl; // Clear progress line
+  std::cerr << "\nProcessing complete:" << std::endl;
+  std::cerr << "  * Variants processed       : " << totalVariants << std::endl;
+  std::cerr << "  * Variants kept            : " << keptVariants << std::endl;
+
+  if (countVariantsWithoutHomAlt > 0 || discardedVariantsCount > 0) {
+    std::cerr << "  * Variants discarded       : "
+              << (countVariantsWithoutHomAlt + discardedVariantsCount)
+              << std::endl;
+    if (countVariantsWithoutHomAlt > 0)
+      std::cerr << "      - No homozygous alt    : "
+                << countVariantsWithoutHomAlt << std::endl;
+    if (discardedVariantsCount > 0)
+      std::cerr << "      - Not in group map     : " << discardedVariantsCount
+                << std::endl;
+  }
+
+  if (lowVarianceVariantsCount > 0) {
+    std::cerr << "  * Warnings:" << std::endl;
+    std::cerr << "      - Low variance dosages : " << lowVarianceVariantsCount
+              << std::endl;
+  }
 }
 
 int main(int argc, char *argv[]) {
@@ -745,10 +794,10 @@ int main(int argc, char *argv[]) {
   // with homozygous alternates
   if (mode == "dominance" && needTwoPass &&
       globalMinDomDosage == std::numeric_limits<double>::max()) {
-    std::cerr
-        << "Error: No variants with homozygous alternate alleles found. "
-           "Dominance encoding requires at least one variant with AA genotype."
-        << std::endl;
+    std::cerr << "Error: No variants with homozygous alternate alleles found. "
+                 "Dominance encoding requires at least one variant with AA "
+                 "genotype."
+              << std::endl;
     bcf_hdr_destroy(hdr);
     bcf_close(fp);
     return 1;
