@@ -1,11 +1,11 @@
-# Call Compound Heterozygous Variants
+# Create a VCF with nonadditive encoding
 
-Efficient C++ tools for detecting compound heterozygous variants and counting cis/trans configurations from phased genetic data.
+Efficient C++ tools for detecting biallelic (compound heterozygous or homozygous) variants and/or recoding them to either recessive or nonadditive genotypes.
 
 ## Tools
 All binaries are compiled to `bin/`. Legacy names are preserved as symlinks but deprecated.
-- `interpret_phase` (formerly `call_chets`): Core tool to identify compound heterozygous variants.
-- `make_pseudo_vcf` (formerly `encode_vcf`): Converts phase results into VCF format with calculated dosages.
+- `interpret_phase` (formerly `call_chets`): Core tool to identify compound heterozygous variants from phased data.
+- `make_pseudo_vcf` (formerly `encode_vcf`): Converts phased results into a VCF.
 - `orthogonalize` (formerly `transform`): Transforms VCFs with orthogonal dominance encodings.
 - `filter_pp` (formerly `filter_vcf_by_pp`): Filters VCFs based on posterior probabilities.
 
@@ -31,7 +31,7 @@ docker run -it call_chets:latest
 ## Quick Start
 *Note: Examples assume you ran `make install`. If not, prefix commands with `bin/` (e.g., `bin/interpret_phase`).*
 
-### 1. Prepare Data
+### 1/3. Prepare Data
 Extract phased genotypes from your VCF:
 ```bash
 bcftools view input.vcf.gz -Ou | \
@@ -39,7 +39,7 @@ bcftools view input.vcf.gz -Ou | \
   gzip > genotypes.txt.gz
 ```
 
-### 2. Call Variants
+### 2/3. Call Variants
 Run `interpret_phase` using a gene mapping file:
 ```bash
 interpret_phase \
@@ -56,8 +56,8 @@ interpret_phase \
   --unphased > results.txt
 ```
 
-### 3. Convert to VCF (Optional)
-Create a VCF with dominance dosages:
+### 3/3. Convert to VCF
+Create a VCF with nonadditive (domiannce) dosages:
 ```bash
 make_pseudo_vcf \
   --input results.txt \
@@ -66,8 +66,8 @@ make_pseudo_vcf \
   --min-ac 1 | bgzip > output.vcf.gz
 ```
 
-### 4. Orthogonalize (Optional)
-You can also orthogonalize any VCF (legacy `transform` tool) directly:
+### 4. Orthogonalize
+You can also orthogonalize any VCF directly (either with or without phased information):
 ```bash
 orthogonalize \
   --input any_variant_file.vcf.gz \
