@@ -20,9 +20,9 @@ This test suite validates the `transform` binary which converts VCF genotype/dos
   - Variant 1: No homozygous alternate alleles (should be skipped in dominance mode)
   - Variant 2: Has homozygous alternates (should be processed)
 
-### Gene Mapping File
+### Group Mapping File
 
-- **test_transform_gene_map.txt**: Maps variants to genes for gene-specific scaling
+- **test_transform_scale_by_group.txt**: Maps variants to groups/genes for group-specific scaling
   ```
   variant           gene
   chr1:1000:A:T    GENE1
@@ -39,28 +39,29 @@ cd /Users/flassen/Projects/06_call_chets/call_chets/tests
 
 ## Test Coverage
 
-### Basic Dominance Mode Tests (7 tests)
+### Basic Dominance Mode Tests (8 tests)
 1. **dominance_mode_basic_gt**: Basic dominance encoding with GT field
 2. **dominance_mode_dosage**: Dominance encoding with DS field
-3. **dominance_mode_scaled**: With dosage scaling to [0,2] range
+3. **dominance_mode_scaled**: With per-variant scaling to [0,2] range
 4. **dominance_mode_variant_id**: With variant ID formatting
 5. **dominance_mode_all_info**: With additional frequency information
-6. **dominance_mode_gene_map**: With gene-specific scaling
-7. **dominance_mode_full**: All options combined
+6. **dominance_mode_global_scale**: With global scaling across all variants
+7. **dominance_mode_group_scale**: With group-specific scaling
+8. **dominance_mode_full**: Group-based scaling with all options combined
 
 ### Recessive Mode Tests (3 tests)
-8. **recessive_mode_basic**: Basic recessive encoding (het=0, hom=2)
-9. **recessive_mode_dosage**: Recessive with DS field
-10. **recessive_mode_variant_id**: Recessive with variant ID formatting
+9. **recessive_mode_basic**: Basic recessive encoding (het=0, hom=2)
+10. **recessive_mode_dosage**: Recessive with DS field
+11. **recessive_mode_variant_id**: Recessive with variant ID formatting
 
 ### Edge Case Tests (2 tests)
-11. **no_homozygous_alternate**: Validates skipping of variants without homozygous alternates
-12. **scaling_factor**: Tests custom scaling factor application
+12. **no_homozygous_alternate**: Validates skipping of variants without homozygous alternates
+13. **scaling_factor**: Tests custom scaling factor application with per-variant scaling
 
 ### Error Handling Tests (3 tests)
-13. **invalid_mode**: Validates rejection of invalid modes
-14. **missing_input**: Validates error handling for missing input file
-15. **missing_gene_map**: Validates error handling for missing gene map
+14. **invalid_mode**: Validates rejection of invalid modes
+15. **missing_input**: Validates error handling for missing input file
+16. **missing_gene_map**: Validates error handling for missing group map
 
 ## Dominance Encoding Formula
 
@@ -98,12 +99,32 @@ The updated transform.cpp now validates inputs **before** producing any output:
 
 **This ensures no output is generated if validation fails.**
 
+## Scaling Modes
+
+Transform supports three mutually exclusive scaling modes:
+
+1. **Per-variant scaling** (`--scale-per-variant`):
+   - Scales each variant independently to [0,2] range
+   - Single pass through the data (fastest)
+   - Use for: Individual variant testing
+   - Note: Betas/SEs not comparable across variants
+
+2. **Global scaling** (`--scale-globally`):
+   - Scales using global min/max across all variants
+   - Two passes through the data
+   - Use for: Group-based testing with comparable betas/SEs across all variants
+
+3. **Group-based scaling** (`--scale-by-group <file>`):
+   - Scales using group-specific (e.g., gene-specific) min/max from mapping file
+   - Two passes through the data
+   - Use for: Gene-based testing with within-gene comparability
+   - Betas/SEs comparable within each group but not across groups
+
 ## Expected Behavior
 
 - **Dominance mode**: Requires variants with AA (1/1) genotypes; skips others
 - **Recessive mode**: Sets heterozygotes to 0, keeps homozygotes as 2
-- **Scaling**: When enabled, transforms dosages to [0,2] range
-- **Gene map**: Enables per-gene scaling instead of global scaling
+- **Scaling**: Three mutually exclusive modes (see above)
 - **Error handling**: Returns non-zero exit code and prints clear error messages
 - **Missing values**: Missing genotypes (`./.`) or hemizygous genotypes are excluded from frequency calculations
   - Frequencies (r, h, a) are calculated using only non-missing samples as denominator

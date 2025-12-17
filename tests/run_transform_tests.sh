@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 
 # Set paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TRANSFORM="../transform"
+TRANSFORM="../bin/transform"
 
 # Track test results
 TESTS_PASSED=0
@@ -37,9 +37,57 @@ verify_dominance_output() {
 
     # Extract dosage values from output
     local dosages=$(sed -n "${variant_line}p" "$output_file" | cut -f10-)
-
-    # Return the dosages for manual verification
     echo "$dosages"
+}
+
+setup_data() {
+    # Create simple VCF
+    cat << EOF > "${SCRIPT_DIR}/test_transform_simple.vcf"
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DS,Number=1,Type=Float,Description="Dosage">
+##contig=<ID=chr1>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	Sample1	Sample2	Sample3	Sample4
+chr1	1000	.	A	T	.	PASS	.	GT:DS	0/0:0.0	0/1:1.0	1/1:2.0	0/1:1.0
+EOF
+
+    # Create dosage VCF
+    cat << EOF > "${SCRIPT_DIR}/test_transform_dosage.vcf"
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##FORMAT=<ID=DS,Number=1,Type=Float,Description="Dosage">
+##contig=<ID=chr1>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	Sample1	Sample2	Sample3	Sample4
+chr1	1000	.	A	T	.	PASS	.	DS	0.1	1.1	1.9	0.9
+EOF
+
+    # Create scaling group file
+    cat << EOF > "${SCRIPT_DIR}/test_transform_scale_by_group.txt"
+variant	group
+chr1:1000:A:T	GENE1
+EOF
+
+    # Create varying frequencies VCF for skew testing
+    cat << EOF > "${SCRIPT_DIR}/test_transform_varying.vcf"
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DS,Number=1,Type=Float,Description="Dosage">
+##contig=<ID=chr1>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2	S3	S4	S5	S6	S7	S8	S9	S10
+chr1	100	.	A	T	.	PASS	.	GT	0/0	0/0	0/0	0/0	0/0	0/0	0/0	0/0	0/1	1/1
+EOF
+
+    # Create VCF with no homozygous alternate
+    cat << EOF > "${SCRIPT_DIR}/test_transform_no_homalt.vcf"
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##contig=<ID=chr1>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2
+chr1	100	.	A	T	.	PASS	.	GT	0/0	0/1
+EOF
 }
 
 # Function to run a test
@@ -136,6 +184,9 @@ verify_dominance_math() {
     echo "  Dosages: $(echo "$line" | cut -f10-)"
 }
 
+# Call setup data function to create necessary VCFs
+setup_data
+
 # Check if transform exists
 print_section "Checking transform binary"
 if [ ! -f "$TRANSFORM" ]; then
@@ -192,20 +243,67 @@ echo -e "\n${YELLOW}Running test: no_homozygous_alternate${NC}"
 output_file="${SCRIPT_DIR}/output_no_homozygous_alternate.vcf"
 $TRANSFORM --input "${SCRIPT_DIR}/test_transform_no_homalt.vcf" --mode dominance > "$output_file" 2>/dev/null
 variant_count=$(grep -v "^#" "$output_file" | wc -l | tr -d ' ')
-if [ "$variant_count" -eq 1 ]; then
-    echo -e "${GREEN}✓ PASSED - Correctly skipped variant without homozygous alternate (1 variant output)${NC}"
+if [ "$variant_count" -eq 0 ]; then
+    echo -e "${GREEN}✓ PASSED - Correctly skipped variant without homozygous alternate (0 variant output)${NC}"
     ((TESTS_PASSED++))
 else
-    echo -e "${RED}✗ FAILED - Expected 1 variant but got $variant_count${NC}"
+    echo -e "${RED}✗ FAILED - Expected 0 variants (skipped) but got $variant_count${NC}"
     ((TESTS_FAILED++))
 fi
 
 # Test 13: Scaling factor with per-variant scaling
-run_test "scaling_factor" "test_transform_simple.vcf" --mode dominance --scale-per-variant --scale-factor 0.5
+run_test "scaling_factor" "test_transform_simple.vcf" --scale-factor 2.0 --scale-per-variant
+
+# Test 14: Varying Frequencies (Skewed)
+# data: 8 Ref (aa), 1 Het (Aa), 1 Alt (AA). Total = 10.
+# r = 0.8, h = 0.1, a = 0.1
+# Expected dosages:
+# aa = -h*a = -0.1 * 0.1 = -0.01
+# Aa = 2*a*r = 2 * 0.1 * 0.8 = 0.16
+# AA = -h*r = -0.1 * 0.8 = -0.08
+echo -e "\n${YELLOW}Running test: varying_frequencies (skewed)${NC}"
+$TRANSFORM --input "${SCRIPT_DIR}/test_transform_varying.vcf" --mode dominance > "${SCRIPT_DIR}/output_varying.vcf" 2>/dev/null
+
+# Extract first line of data and check dosages
+# S1 (aa) should be -0.01
+# S9 (Aa) should be 0.16
+# S10 (AA) should be -0.08
+# Allow small floating point differences
+line=$(grep "^chr1" "${SCRIPT_DIR}/output_varying.vcf")
+# We need to parse strict values.
+# Output columns: ... FORMAT S1 S2 ... S9 S10
+# S1 is col 10. S9 is col 18. S10 is col 19.
+d_aa=$(echo "$line" | awk '{print $10}')
+d_Aa=$(echo "$line" | awk '{print $18}')
+d_AA=$(echo "$line" | awk '{print $19}')
+
+# Check using python or awk. Let's use awk to verify range.
+is_valid=$(awk -v aa="$d_aa" -v Aa="$d_Aa" -v AA="$d_AA" 'BEGIN {
+    tol = 0.001;
+    e_aa = -0.01;
+    e_Aa = 0.16;
+    e_AA = -0.08;
+    
+    diff_aa = (aa - e_aa); if(diff_aa<0) diff_aa*=-1;
+    diff_Aa = (Aa - e_Aa); if(diff_Aa<0) diff_Aa*=-1;
+    diff_AA = (AA - e_AA); if(diff_AA<0) diff_AA*=-1;
+
+    if (diff_aa < tol && diff_Aa < tol && diff_AA < tol) print "POK";
+    else print "FAIL";
+}')
+
+if [ "$is_valid" == "POK" ]; then
+    echo -e "${GREEN}✓ PASSED - Dosages match expected skewed values (-0.01, 0.16, -0.08)${NC}"
+    ((TESTS_PASSED++))
+else
+    echo -e "${RED}✗ FAILED - Dosages do not match expected -0.01/0.16/-0.08${NC}"
+    echo "Got: aa=$d_aa, Aa=$d_Aa, AA=$d_AA"
+    ((TESTS_FAILED++))
+fi
 
 print_section "Error Handling Tests"
 
-# Test 13: Invalid mode
+# Test 15: Invalid mode
 run_failing_test "invalid_mode" "test_transform_simple.vcf" --mode invalid
 
 # Test 14: Missing input file

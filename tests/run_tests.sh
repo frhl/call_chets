@@ -8,7 +8,7 @@ NC='\033[0m' # No Color
 
 # Set paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CALL_CHETS="../call_chets"
+CALL_CHETS="../bin/call_chets"
 
 # Track test results
 TESTS_PASSED=0
@@ -142,6 +142,15 @@ run_test "haploid_genotypes" "genotypes_haploid.txt.gz" "expected_haploid_genoty
 
 # Test 13: Missing genotypes (should skip missing and process valid)
 run_test "missing_genotypes" "genotypes_missing.txt.gz" "expected_missing_genotypes.txt" ""
+
+# Test 20: Phased mode with collapse rule 'min'
+run_test "phased_mode_collapse_min" "genotypes_phased.txt.gz" "expected_phased_mode_collapse_min.txt" "--score-map score_map.txt.gz --haplotype-collapse min --gene-collapse min --show-haplotype-scores"
+
+# Test 21: Phased mode with collapse rule 'max'
+run_test "phased_mode_collapse_max" "genotypes_phased.txt.gz" "expected_phased_mode_collapse_max.txt" "--score-map score_map.txt.gz --haplotype-collapse max --gene-collapse max --show-haplotype-scores"
+
+# Test 22: Phased mode with collapse rule 'additive'
+run_test "phased_mode_collapse_additive" "genotypes_phased.txt.gz" "expected_phased_mode_collapse_additive.txt" "--score-map score_map.txt.gz --haplotype-collapse additive --gene-collapse additive --show-haplotype-scores"
 
 echo ""
 echo "======================================"

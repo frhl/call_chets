@@ -7,3 +7,4 @@ testhat/
 .CACHED
 .claude.md
 claude.md
+bin/

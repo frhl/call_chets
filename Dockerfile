@@ -24,46 +24,38 @@ RUN apt-get update && apt-get install -y \
 RUN git clone --recurse-submodules https://github.com/samtools/htslib.git
 
 # Install htslib
-WORKDIR htslib
+
+# Install htslib
+WORKDIR /usr/src/htslib
 RUN make
 RUN make install
-WORKDIR ..
+WORKDIR /usr/src
 
 # Fix lhts paths
 RUN ldconfig
 
 # copy scripts
-WORKDIR app
+WORKDIR /usr/src/app
 COPY makefile makefile
-COPY make_version.sh make_version.sh
-COPY call_chets.cpp call_chets.cpp
-COPY encode_vcf.cpp encode_vcf.cpp
-COPY encode_vcf_by_group.cpp encode_vcf_by_group.cpp
-COPY transform.cpp transform.cpp
-COPY count_by_gene.cpp count_by_gene.cpp
-COPY filter_vcf_by_pp.cpp filter_vcf_by_pp.cpp
-COPY recode_vcf.cpp recode_vcf.cpp
+COPY src src
+COPY scripts scripts
+RUN mkdir bin
 
 # Set execute permission for make_version.sh
-RUN chmod +x make_version.sh
+RUN chmod +x scripts/make_version.sh
 
 # Pass git information to the version script
 ENV GIT_COMMIT=$GIT_COMMIT
 ENV GIT_DATE=$GIT_DATE
 
-# Create version file (will be embedded in binaries through makefile)
-RUN ./make_version.sh
-
-# Build the applications
+# Create version file (will be embedded in binaries through makef# Build
 RUN make
-
-# move to folder in PATH
-RUN mv call_chets /usr/local/bin/.
-RUN mv encode_vcf /usr/local/bin/.
-RUN mv encode_vcf_by_group /usr/local/bin/.
-RUN mv transform /usr/local/bin/.
-RUN mv count_by_gene /usr/local/bin/.
-RUN mv recode_vcf /usr/local/bin/.
+# No need to move binaries as make now outputs to bin/ and Dockerfile WORKDIR is /usr/src/app
+# However, if we want them in path:
+ENV PATH="/usr/src/app/bin:${PATH}"
+RUN mv bin/transform /usr/local/bin/.
+RUN mv bin/count_by_gene /usr/local/bin/.
+RUN mv bin/recode_vcf /usr/local/bin/.
 
 
 # Set default command to R when the container starts

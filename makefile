@@ -1,67 +1,102 @@
-CC = g++
-CFLAGS = -Wall -O2
-INCLUDES = -I/usr/local/include
-LIBS = -L/usr/local/lib -lhts -lz
+# Version determination: Try .version file first (for Docker), then git, then date
+VERSION_FILE := $(shell cat .version 2>/dev/null)
+ifneq ($(VERSION_FILE),)
+    GIT_VERSION := $(VERSION_FILE)
+else
+    GIT_VERSION := $(shell git describe --abbrev=4 --dirty --always --tags 2>/dev/null || date +%Y-%m-%d)
+endif
 
+# Compiler
+CXX := g++
+
+# Compiler flags
+CXXFLAGS := -O2 -std=c++11 -Wall -DVERSION=\"$(GIT_VERSION)\"
+
+# Include directories
+INCLUDES := -I./src
+
+# Library paths and libraries
 # Add Homebrew paths on macOS if they exist
 ifeq ($(shell uname), Darwin)
     ifneq (,$(wildcard /opt/homebrew/include))
         INCLUDES += -I/opt/homebrew/include
-        LIBS += -L/opt/homebrew/lib
+        LIBS_PATH += -L/opt/homebrew/lib
+    endif
+    ifneq (,$(wildcard /usr/local/include))
+        INCLUDES += -I/usr/local/include
+        LIBS_PATH += -L/usr/local/lib
     endif
 endif
 
-# Get version info from environment or git
-GIT_COMMIT := $(shell if [ -n "$$GIT_COMMIT" ]; then echo "$$GIT_COMMIT"; else git rev-parse --short HEAD 2>/dev/null || echo "unknown"; fi)
-GIT_DATE := $(shell if [ -n "$$GIT_DATE" ]; then echo "$$GIT_DATE"; else git log -1 --format=%cd --date=short 2>/dev/null || date +"%Y-%m-%d"; fi)
-VERSION := $(shell cat .version 2>/dev/null || echo "0.3.0")
+LIBS := $(LIBS_PATH) -lz -lhts
 
-# Add git info to compilation flags
-CFLAGS += -DGIT_COMMIT=\"$(GIT_COMMIT)\" -DGIT_DATE=\"$(GIT_DATE)\" -DVERSION=\"$(VERSION)\"
+# Output directory
+BIN_DIR := bin
 
-TARGET1 = filter_vcf_by_pp
-TARGET2 = call_chets
-TARGET3 = encode_vcf
-TARGET4 = transform
-TARGET5 = count_by_gene
-TARGET6 = encode_vcf_by_group
-TARGET7 = recode_vcf
+# Output binaries
+TARGET_CALL_CHETS := $(BIN_DIR)/call_chets
+TARGET_ENCODE := $(BIN_DIR)/encode_vcf
+TARGET_RECODE := $(BIN_DIR)/recode_vcf
+TARGET_TRANSFORM := $(BIN_DIR)/transform
+# Target executables
+TARGETS := bin/interpret_phase bin/make_pseudo_vcf bin/orthogonalize bin/filter_pp bin/count_by_gene bin/encode_vcf_by_group
 
-SOURCE1 = filter_vcf_by_pp.cpp
-SOURCE2 = call_chets.cpp
-SOURCE3 = encode_vcf.cpp
-SOURCE4 = transform.cpp
-SOURCE5 = count_by_gene.cpp
-SOURCE6 = encode_vcf_by_group.cpp
-SOURCE7 = recode_vcf.cpp
+# Legacy symlinks (for backward compatibility)
+LEGACY_LINKS := bin/call_chets bin/encode_vcf bin/transform bin/filter_vcf_by_pp
 
-all: $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7)
+# Source files
+SRC_DIR := src
+SRCS := $(wildcard $(SRC_DIR)/*.cpp)
+OBJS := $(SRCS:.cpp=.o)
 
-$(TARGET1): $(SOURCE1)
-		$(CC) $(CFLAGS) $(INCLUDES) $(SOURCE1) -o $(TARGET1) $(LIBS)
+# Default target
+all: $(TARGETS) legacy_links
 
-$(TARGET2): $(SOURCE2)
-		$(CC) $(CFLAGS) $(INCLUDES) $(SOURCE2) -o $(TARGET2) $(LIBS)
+# Link targets
+bin/interpret_phase: src/interpret_phase.o src/ChetCaller.o
+	@mkdir -p bin
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
 
-$(TARGET3): $(SOURCE3)
-		$(CC) $(CFLAGS) $(INCLUDES) $(SOURCE3) -o $(TARGET3) $(LIBS)
+bin/make_pseudo_vcf: src/make_pseudo_vcf.o
+	@mkdir -p bin
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
 
-$(TARGET4): $(SOURCE4)
-		$(CC) $(CFLAGS) $(INCLUDES) $(SOURCE4) -o $(TARGET4) $(LIBS)
+bin/orthogonalize: src/orthogonalize.o
+	@mkdir -p bin
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
 
-$(TARGET5): $(SOURCE5)
-		$(CC) $(CFLAGS) $(INCLUDES) $(SOURCE5) -o $(TARGET5) $(LIBS)
+bin/filter_pp: src/filter_pp.o
+	@mkdir -p bin
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
 
-$(TARGET6): $(SOURCE6)
-		$(CC) $(CFLAGS) $(INCLUDES) $(SOURCE6) -o $(TARGET6) $(LIBS)
+bin/count_by_gene: src/count_by_gene.o
+	@mkdir -p bin
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
 
-$(TARGET7): $(SOURCE7)
-		$(CC) $(CFLAGS) $(INCLUDES) $(SOURCE7) -o $(TARGET7) $(LIBS)
+bin/encode_vcf_by_group: src/encode_vcf_by_group.o
+	@mkdir -p bin
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
 
+# Compile source files
+src/%.o: src/%.cpp
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
 
+# Create legacy symlinks
+legacy_links: $(TARGETS)
+	@ln -sf interpret_phase bin/call_chets
+	@ln -sf make_pseudo_vcf bin/encode_vcf
+	@ln -sf orthogonalize bin/transform
+	@ln -sf filter_pp bin/filter_vcf_by_pp
 
-
-
+# Clean
 clean:
-		rm -f $(TARGET1) $(TARGET2) $(TARGET3) $(TARGET4) $(TARGET5) $(TARGET6) $(TARGET7)
+	rm -f $(TARGETS) $(LEGACY_LINKS) src/*.o
 
+# Install
+PREFIX ?= /usr/local
+install: all
+	@mkdir -p $(PREFIX)/bin
+	@cp $(TARGETS) $(PREFIX)/bin/
+	@# Copy symlinks if desired, or let user rely on new names
+
+.PHONY: all clean legacy_links install
