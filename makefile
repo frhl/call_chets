@@ -41,13 +41,13 @@ BIN_DIR := bin
 # Output binaries
 TARGET_CALL_CHETS := $(BIN_DIR)/call_chets
 TARGET_ENCODE := $(BIN_DIR)/encode_vcf
-TARGET_RECODE := $(BIN_DIR)/recode_vcf
+TARGET_RECODE := $(BIN_DIR)/recode
 TARGET_TRANSFORM := $(BIN_DIR)/transform
 # Target executables
-TARGETS := bin/interpret_phase bin/make_pseudo_vcf bin/orthogonalize bin/filter_pp bin/count_by_gene bin/encode_vcf_by_group
+TARGETS := bin/interpret_phase bin/make_pseudo_vcf bin/recode bin/filter_pp bin/count_by_gene bin/encode_vcf_by_group
 
 # Legacy symlinks (for backward compatibility)
-LEGACY_LINKS := bin/call_chets bin/encode_vcf bin/transform bin/filter_vcf_by_pp
+LEGACY_LINKS := bin/call_chets bin/encode_vcf bin/transform bin/filter_vcf_by_pp bin/orthogonalize
 
 # Source files
 SRC_DIR := src
@@ -66,7 +66,7 @@ bin/make_pseudo_vcf: src/make_pseudo_vcf.o
 	@mkdir -p bin
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
 
-bin/orthogonalize: src/orthogonalize.o
+bin/recode: src/recode.o
 	@mkdir -p bin
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
 
@@ -90,7 +90,8 @@ src/%.o: src/%.cpp
 legacy_links: $(TARGETS)
 	@ln -sf interpret_phase bin/call_chets
 	@ln -sf make_pseudo_vcf bin/encode_vcf
-	@ln -sf orthogonalize bin/transform
+	@ln -sf recode bin/transform
+	@ln -sf recode bin/orthogonalize
 	@ln -sf filter_pp bin/filter_vcf_by_pp
 
 # Clean

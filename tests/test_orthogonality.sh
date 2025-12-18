@@ -7,7 +7,7 @@ set -e
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(dirname "$SCRIPT_DIR")
 TEST_DIR=$(mktemp -d)
-BIN_ORTH="$ROOT_DIR/bin/orthogonalize"
+BIN_ORTH="$ROOT_DIR/bin/recode"
 SCRIPT_CHECK="$SCRIPT_DIR/check_orthogonality.R"
 
 echo "Running Orthogonality Test..."

@@ -213,7 +213,7 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
   params["Scale Global"] = scaleGlobally ? "Yes" : "No";
   params["All Info"] = allInfo ? "Yes" : "No";
 
-  call_chets::printHeader("ORTHOGONALIZE",
+  call_chets::printHeader("RECODE",
                           "Transform genotypes/dosages to dominance encoding",
                           files, params);
 
@@ -454,6 +454,7 @@ void processVcfFile(
   const double lowVarianceThreshold =
       0.0001; // Warn if any two genotype dosages differ by less than this
   long roundedDosageCount = 0;
+  long haploidWarningCount = 0;
 
   // Variables for output preview
   std::vector<VariantEncodingExample> encodingExamples;
@@ -688,72 +689,120 @@ void processVcfFile(
     // Output dosage values for each sample
     for (int i = 0; i < n_samples; ++i) {
       double dosage = 0.0;
+      bool is_missing = false;
       int *gt_ptr = has_gt ? gt_arr + i * 2 : NULL;
       float ds_value = has_ds ? ds_arr[i] : 0.0f;
 
-      if ((has_gt && !bcf_gt_is_missing(gt_ptr[0]) &&
-           !bcf_gt_is_missing(gt_ptr[1])) ||
-          (has_ds && !std::isnan(ds_value))) {
+      if (has_gt) {
+        int allele1_missing = bcf_gt_is_missing(gt_ptr[0]);
+        int allele2_missing = bcf_gt_is_missing(gt_ptr[1]);
 
-        int geno;
-        if (has_gt && !bcf_gt_is_missing(gt_ptr[0]) &&
-            !bcf_gt_is_missing(gt_ptr[1])) {
+        if (allele1_missing && allele2_missing) {
+          is_missing = true;
+        } else if (allele1_missing || allele2_missing) {
+          // Haploid (one missing, one present)
+          dosage = 0.0;
+          haploidWarningCount++;
+          if (haploidWarningCount <= 5) {
+            std::cerr << "Warning: Haploid genotype detected for sample "
+                      << i + 1 << " at " << variantId << ". Setting to 0."
+                      << std::endl;
+          }
+        } else {
+          // Diploid (both present)
           int allele1 = bcf_gt_allele(gt_ptr[0]);
           int allele2 = bcf_gt_allele(gt_ptr[1]);
+          int geno = -1;
+
           if (allele1 == 0 && allele2 == 0)
             geno = 0;
           else if (allele1 != allele2)
             geno = 1;
           else if (allele1 > 0 && allele2 > 0)
             geno = 2;
-          else
-            continue;
-        } else {
-          geno = std::round(ds_value);
-          if (geno < 0 || geno > 2)
-            continue;
-        }
 
-        if (mode == "dominance") {
-          // Dominance mode encoding
-          if (geno == 0)
-            dosage = -h * a;
-          else if (geno == 1)
-            dosage = 2 * a * r;
-          else if (geno == 2)
-            dosage = -h * r;
+          if (geno >= 0) {
+            if (mode == "dominance") {
+              if (geno == 0)
+                dosage = -h * a;
+              else if (geno == 1)
+                dosage = 2 * a * r;
+              else if (geno == 2)
+                dosage = -h * r;
 
-          if (scalePerVariant || scaleGlobally || scaleByGroup) {
-            dosage = 2 * ((dosage - localMinDomDosage) /
-                          (localMaxDomDosage - localMinDomDosage));
-            if (dosage < 0) {
-              dosage = 0;
-            } else if (dosage > 2 + epsilon) {
-              std::cerr << "Error: Dosage value " << dosage
-                        << " exceeds 2 + epsilon (" << (2 + epsilon) << ")"
-                        << std::endl;
-              exit(1);
+              if (scalePerVariant || scaleGlobally || scaleByGroup) {
+                dosage = 2 * ((dosage - localMinDomDosage) /
+                              (localMaxDomDosage - localMinDomDosage));
+                if (dosage < 0) {
+                  dosage = 0;
+                } else if (dosage > 2 + epsilon) {
+                  std::cerr << "Error: Dosage value " << dosage
+                            << " exceeds 2 + epsilon (" << (2 + epsilon) << ")"
+                            << std::endl;
+                  exit(1);
+                }
+              }
+            } else if (mode == "recessive") {
+              if (geno == 0)
+                dosage = 0.0;
+              else if (geno == 1)
+                dosage = 0.0;
+              else if (geno == 2)
+                dosage = 2.0;
             }
-          }
-        } else if (mode == "recessive") {
-          // Recessive mode encoding - set heterozygotes to 0, homozygotes
-          // unchanged
-          if (geno == 0)
-            dosage = 0.0;
-          else if (geno == 1)
-            dosage = 0.0; // Set heterozygotes to 0
-          else if (geno == 2)
-            dosage = 2.0;
-        }
 
-        if (scalingFactor != 0) {
-          dosage *= scalingFactor;
+            if (scalingFactor != 0)
+              dosage *= scalingFactor;
+          }
         }
+      } else if (has_ds) {
+        if (std::isnan(ds_value)) {
+          is_missing = true;
+        } else {
+          int geno = std::round(ds_value);
+          if (geno >= 0 && geno <= 2) {
+            if (mode == "dominance") {
+              if (geno == 0)
+                dosage = -h * a;
+              else if (geno == 1)
+                dosage = 2 * a * r;
+              else if (geno == 2)
+                dosage = -h * r;
+
+              if (scalePerVariant || scaleGlobally || scaleByGroup) {
+                dosage = 2 * ((dosage - localMinDomDosage) /
+                              (localMaxDomDosage - localMinDomDosage));
+                if (dosage < 0) {
+                  dosage = 0;
+                } else if (dosage > 2 + epsilon) {
+                  std::cerr << "Error: Dosage value " << dosage
+                            << " exceeds 2 + epsilon (" << (2 + epsilon) << ")"
+                            << std::endl;
+                  exit(1);
+                }
+              }
+            } else if (mode == "recessive") {
+              if (geno == 0)
+                dosage = 0.0;
+              else if (geno == 1)
+                dosage = 0.0;
+              else if (geno == 2)
+                dosage = 2.0;
+            }
+            if (scalingFactor != 0)
+              dosage *= scalingFactor;
+          }
+        }
+      } else {
+        is_missing = true;
       }
 
-      std::cout << "\t" << dosage;
+      if (is_missing) {
+        std::cout << "\t.";
+      } else {
+        std::cout << "\t" << dosage;
+      }
     }
-
     std::cout << std::endl;
   }
 
@@ -763,6 +812,7 @@ void processVcfFile(
 
   // If we collected fewer than MAX_EXAMPLES, print them now
   if (mode == "dominance" && !previewPrinted && !encodingExamples.empty()) {
+    // ... logic for printing preview ...
     std::string modeStr = "";
     if (scaleGlobally)
       modeStr = "Global";
@@ -813,6 +863,14 @@ void processVcfFile(
               << std::endl;
     std::cerr << "        (DS values were rounded to nearest integer)"
               << std::endl;
+  }
+
+  if (haploidWarningCount > 0) {
+    if (lowVarianceVariantsCount == 0 && roundedDosageCount == 0)
+      std::cerr << "  * Warnings:" << std::endl;
+    std::cerr << "      - Haploid genotypes    : " << haploidWarningCount
+              << std::endl;
+    std::cerr << "        (set to 0, warnings truncated after 5)" << std::endl;
   }
 }
 
@@ -942,8 +1000,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // For dominance mode with global/group scaling, validate we found variants
-  // with homozygous alternates
+  // For dominance mode with global/group scaling, validate we found
+  // variants with homozygous alternates
   if (mode == "dominance" && needTwoPass &&
       globalMinDomDosage == std::numeric_limits<double>::max()) {
     std::cerr << "Error: No variants with homozygous alternate alleles found. "

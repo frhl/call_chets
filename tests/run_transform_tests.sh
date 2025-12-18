@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 
 # Set paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TRANSFORM="${SCRIPT_DIR}/../bin/orthogonalize"
+TRANSFORM="${SCRIPT_DIR}/../bin/recode"
 
 # Track test results
 TESTS_PASSED=0
@@ -235,6 +235,47 @@ run_test "recessive_mode_dosage" "test_transform_dosage.vcf" --mode recessive
 
 # Test 11: Recessive mode with variant ID
 run_test "recessive_mode_variant_id" "test_transform_simple.vcf" --mode recessive --set-variant-id
+
+# Test 11b: Recessive encoding [0,0,1] conversion (Additive -> Recessive)
+# Input genotypes: 0/0 (Ref), 0/1 (Het), 1/1 (HomAlt), 0/1 (Het)
+# Standard Recessive encoding: 0, 0, 2, 0
+# With scale factor 0.5: 0, 0, 1, 0
+echo -e "\n${YELLOW}Running test: recessive_001_conversion${NC}"
+output_file="${SCRIPT_DIR}/output_recessive_001_conversion.vcf"
+$TRANSFORM --input "${SCRIPT_DIR}/test_transform_simple.vcf" --mode recessive --scale-factor 0.5 > "$output_file" 2>/dev/null
+
+# Extract dosages
+line=$(grep -v "^#" "$output_file" | head -1)
+# Sample 1 (0/0) -> Expected 0.0
+# Sample 2 (0/1) -> Expected 0.0
+# Sample 3 (1/1) -> Expected 1.0 (2.0 * 0.5)
+# Sample 4 (0/1) -> Expected 0.0
+
+d1=$(echo "$line" | cut -f10)
+d2=$(echo "$line" | cut -f11)
+d3=$(echo "$line" | cut -f12)
+d4=$(echo "$line" | cut -f13)
+
+# Verification using awk for float comparison
+is_valid=$(awk -v d1="$d1" -v d2="$d2" -v d3="$d3" -v d4="$d4" 'BEGIN {
+    tol = 0.001;
+    diff_d3 = d3 - 1.0;
+    if (diff_d3 < 0) diff_d3 = -diff_d3;
+    
+    if (d1 < tol && d2 < tol && diff_d3 < tol && d4 < tol) print "PASS";
+    else print "FAIL";
+}')
+
+if [ "$is_valid" == "PASS" ]; then
+    echo -e "${GREEN}✓ PASSED - Correctly converted to [0,0,1] encoding${NC}"
+    echo "  Dosages: $d1, $d2, $d3, $d4 (Expected: 0.0, 0.0, 1.0, 0.0)"
+    ((TESTS_PASSED++))
+else
+    echo -e "${RED}✗ FAILED - Incorrect conversion${NC}"
+    echo "  Got dosages: $d1, $d2, $d3, $d4"
+    echo "  Expected: 0.0, 0.0, 1.0, 0.0"
+    ((TESTS_FAILED++))
+fi
 
 print_section "Edge Case Tests"
 

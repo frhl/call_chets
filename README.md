@@ -6,7 +6,7 @@ Efficient C++ tools for detecting biallelic (compound heterozygous or homozygous
 All binaries are compiled to `bin/`. Legacy names are preserved as symlinks but deprecated.
 - `interpret_phase` (formerly `call_chets`): Core tool to identify compound heterozygous variants from phased data.
 - `make_pseudo_vcf` (formerly `encode_vcf`): Converts phased results into a VCF.
-- `orthogonalize` (formerly `transform`): Transforms VCFs with orthogonal dominance encodings.
+- `recode` (formerly `orthogonalize`): Transforms VCFs with orthogonal dominance or recessive encodings.
 - `filter_pp` (formerly `filter_vcf_by_pp`): Filters VCFs based on posterior probabilities.
 
 ## Installation
@@ -66,10 +66,10 @@ make_pseudo_vcf \
   --min-ac 1 | bgzip > output.vcf.gz
 ```
 
-### 4. Orthogonalize
-You can also orthogonalize any VCF directly (either with or without phased information):
+### 4. Recode
+You can also recode any VCF directly (either with or without phased information) into orthogonal or recessive encodings:
 ```bash
-orthogonalize \
+recode \
   --input any_variant_file.vcf.gz \
-  --mode dominance | bgzip > orthogonalized.vcf.gz
+  --mode dominance | bgzip > recoded.vcf.gz
 ```

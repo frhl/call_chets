@@ -7,7 +7,7 @@ set -e
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(dirname "$SCRIPT_DIR")
 TEST_DIR=$(mktemp -d)
-BIN_ORTH="$ROOT_DIR/bin/orthogonalize"
+BIN_ORTH="$ROOT_DIR/bin/recode"
 echo "Temp Dir: $TEST_DIR"
 
 # Create VCF with float dosages around 0.5 and 1.5
