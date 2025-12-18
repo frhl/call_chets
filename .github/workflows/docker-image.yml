@@ -15,7 +15,9 @@ jobs:
     
     - name: Read version
       id: get_version
-      run: echo "VERSION=$(cat .version)" >> $GITHUB_ENV
+      run: |
+        echo "VERSION=$(cat .version)" >> $GITHUB_ENV
+        echo "GIT_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v2
@@ -41,4 +43,4 @@ jobs:
         # Pass build arguments for git info if needed, though Dockerfile arguments look for ARG
         build-args: |
           GIT_COMMIT=${{ github.sha }}
-          GIT_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          GIT_DATE=${{ env.GIT_DATE }}
