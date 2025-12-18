@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Note: Before running, create and upload the docker tarball:
+#   docker pull fhlassen/call_chets:latest
+#   docker save fhlassen/call_chets:latest | gzip > call_chets_1.0.1.tar.gz
+#   dx upload call_chets_1.0.1.tar.gz --dest /docker/
+
 # this is a wrapper that combines several tools towards a pipeline for CompHet calling.
 # input: phased genotypes, annotations in BRaVa/SAIGE format
 # output: VCFs based on different consequences, for either additive or recessive effects

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Get the version number from major.minor.patch
-VERSION="1.0.2"
+VERSION="1.0.3"
 
 # Use environment variables if available, otherwise try git commands
 if [ -n "$GIT_COMMIT" ]; then

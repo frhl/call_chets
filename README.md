@@ -20,12 +20,16 @@ sudo make install # Optional: installs to /usr/local/bin
 ```
 
 ### Docker
+You can pull the pre-built image from Docker Hub (replace `<USERNAME>` with your Docker Hub username):
 ```bash
-# Build
-./build_docker.sh
+docker pull <USERNAME>/call_chets:latest
+# or for a specific version
+docker pull <USERNAME>/call_chets:1.0.1
+```
 
-# Run
-docker run -it call_chets:latest
+Or build locally:
+```bash
+docker build -t call_chets .
 ```
 
 ## Quick Start

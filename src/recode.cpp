@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <ctime>
@@ -310,11 +311,16 @@ void calculateGlobalAndGroupDosages(
   float *ds_arr = NULL;
   int nds_arr = 0;
   long roundedDosageCount = 0; // Local counter for this pass
+  long processedVariants = 0;
 
   bool has_gt = hasFormat(hdr, "GT");
   bool has_ds = hasFormat(hdr, "DS");
 
   while (bcf_read(fp, hdr, rec) == 0) {
+    processedVariants++;
+    if (processedVariants % 5000 == 0) {
+      std::cerr << "\r[Pass 1: Parsing variants] Processed: " << processedVariants << std::flush;
+    }
     chromosomes.insert(bcf_hdr_id2name(hdr, rec->rid));
     bcf_unpack(rec, BCF_UN_STR);
 
@@ -365,6 +371,7 @@ void calculateGlobalAndGroupDosages(
       }
     }
   }
+  std::cerr << std::endl;
 
   free(gt_arr);
   free(ds_arr);
@@ -475,10 +482,10 @@ void processVcfFile(
     if (!has_gt && !has_ds)
       continue;
 
-    // Progress logging every 1000 variants
-    if (totalVariants % 1000 == 0) {
-      std::cerr << "\r[Progress] Processed: " << totalVariants
-                << " | Kept: " << keptVariants << " | Discarded: "
+    // Progress logging every 5000 variants
+    if (totalVariants % 5000 == 0) {
+      std::cerr << "\r[Pass 2: Writing variants] Processed: " << totalVariants
+                << " | Written: " << keptVariants << " | Discarded: "
                 << (discardedVariantsCount + countVariantsWithoutHomAlt)
                 << std::flush;
     }
@@ -932,6 +939,15 @@ int main(int argc, char *argv[]) {
   }
   std::cerr << "  * Samples: " << n_samples << std::endl;
 
+  std::cerr << "  * Encoding Info : ";
+  if (mode == "recessive") {
+    double v2 = 2.0 * scalingFactor;
+    std::cerr << "Recoding [0, 1, 2] -> [0, 0, " << v2 << "]" << std::endl;
+  } else if (mode == "dominance") {
+    std::cerr << "Recoding [0, 1, 2] -> " << scalingFactor
+              << " * [-h*a, 2*a*r, -h*r] (dominance deviation)" << std::endl;
+  }
+
   // Validate that VCF has GT or DS format fields
   bool has_gt = hasFormat(hdr, "GT");
   bool has_ds = hasFormat(hdr, "DS");
@@ -969,6 +985,12 @@ int main(int argc, char *argv[]) {
 
   // Only do first pass if we need global or group-based scaling
   bool needTwoPass = scaleGlobally || !scaleByGroupPath.empty();
+
+  std::cerr << "  * Parsing specified genomic regions (Pass 1/2)..."
+            << std::endl;
+
+  auto pass1_start = std::chrono::steady_clock::now();
+
   if (needTwoPass) {
     calculateGlobalAndGroupDosages(fp, hdr, globalMinDomDosage,
                                    globalMaxDomDosage, n_samples, chromosomes,
@@ -986,11 +1008,22 @@ int main(int argc, char *argv[]) {
   } else {
     // For per-variant scaling or no scaling, just collect chromosomes
     bcf1_t *rec = bcf_init();
+    long processedVariants = 0;
     while (bcf_read(fp, hdr, rec) == 0) {
+      processedVariants++;
+      if (processedVariants % 5000 == 0) {
+        std::cerr << "\r[Pass 1: Parsing variants] Processed: " << processedVariants
+                  << std::flush;
+      }
       chromosomes.insert(bcf_hdr_id2name(hdr, rec->rid));
     }
+    std::cerr << std::endl;
     bcf_destroy(rec);
   }
+
+  auto pass1_end = std::chrono::steady_clock::now();
+  auto pass1_duration = std::chrono::duration_cast<std::chrono::seconds>(pass1_end - pass1_start);
+  std::cerr << "  * Pass 1 completed in " << pass1_duration.count() << " seconds" << std::endl;
 
   // Validate that we found at least one variant
   if (chromosomes.empty()) {
@@ -1030,9 +1063,17 @@ int main(int argc, char *argv[]) {
   printHeader(hdr, sortedContigs, mode, globalMinDomDosage, globalMaxDomDosage,
               allInfo, scalePerVariant, scaleGlobally, scaleByGroup);
 
+  std::cerr << "  * Writing variants (Pass 2/2)..." << std::endl;
+
+  auto pass2_start = std::chrono::steady_clock::now();
+
   processVcfFile(fp, hdr, mode, globalMinDomDosage, globalMaxDomDosage, allInfo,
                  scalePerVariant, scaleGlobally, scaleByGroup, setVariantId,
                  scalingFactor, groupMap, groupDosages);
+
+  auto pass2_end = std::chrono::steady_clock::now();
+  auto pass2_duration = std::chrono::duration_cast<std::chrono::seconds>(pass2_end - pass2_start);
+  std::cerr << "  * Pass 2 completed in " << pass2_duration.count() << " seconds" << std::endl;
 
   bcf_hdr_destroy(hdr);
   bcf_close(fp);
