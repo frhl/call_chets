@@ -387,7 +387,7 @@ void printHeader(const bcf_hdr_t *hdr,
 
   std::cout << "##fileformat=VCFv4.2\n";
   std::cout << "##EncodingMode=" << mode << "\n";
-  // output chromosomes
+  // output chromosomes (only if provided)
   for (const auto &chr : sortedContigs) {
     std::cout << "##contig=<ID=" << chr << ">\n";
   }
@@ -444,7 +444,8 @@ void processVcfFile(
     bool scalePerVariant, bool scaleGlobally, bool scaleByGroup,
     bool setVariantId, double scalingFactor,
     const std::map<std::string, std::string> &groupMap,
-    const std::map<std::string, std::pair<double, double>> &groupDosages) {
+    const std::map<std::string, std::pair<double, double>> &groupDosages,
+    std::set<std::string> &chromosomes) {
   bcf1_t *rec = bcf_init();
   int *gt_arr = NULL, ngt_arr = 0;
   float *ds_arr = NULL;
@@ -475,6 +476,9 @@ void processVcfFile(
     totalVariants++;
     bcf_unpack(rec, BCF_UN_STR);
 
+    // Collect chromosome names as we process
+    chromosomes.insert(bcf_hdr_id2name(hdr, rec->rid));
+
     int ngt = has_gt ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
     int nds =
         has_ds ? bcf_get_format_float(hdr, rec, "DS", &ds_arr, &nds_arr) : 0;
@@ -484,7 +488,7 @@ void processVcfFile(
 
     // Progress logging every 5000 variants
     if (totalVariants % 5000 == 0) {
-      std::cerr << "\r[Pass 2: Writing variants] Processed: " << totalVariants
+      std::cerr << "\r[Writing variants] Processed: " << totalVariants
                 << " | Written: " << keptVariants << " | Discarded: "
                 << (discardedVariantsCount + countVariantsWithoutHomAlt)
                 << std::flush;
@@ -525,48 +529,56 @@ void processVcfFile(
     if (non_missing_count == 0)
       continue;
 
-    double r = static_cast<double>(aa_count) / non_missing_count;
-    double h = static_cast<double>(Aa_count) / non_missing_count;
-    double a = static_cast<double>(AA_count) / non_missing_count;
-
     keptVariants++;
-
-    double dom_dosage_aa = -h * a;
-    double dom_dosage_Aa = 2 * a * r;
-    double dom_dosage_AA = -h * r;
 
     std::string variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
                             std::to_string(rec->pos + 1) + ":" +
                             rec->d.allele[0] + ":" + rec->d.allele[1];
 
-    if (scaleByGroup && groupMap.find(variantId) == groupMap.end()) {
-      if (discardedVariantsCount < warningLimit) {
-        std::cerr << "Warning: Variant '" << variantId
-                  << "' not found in group map. Discarding.\n";
-      }
-      discardedVariantsCount++;
-      continue;
-    }
-
-    double localMinDomDosage = globalMinDomDosage;
-    double localMaxDomDosage = globalMaxDomDosage;
+    // Only calculate frequencies and dominance dosages if needed
+    double r = 0.0, h = 0.0, a = 0.0;
+    double dom_dosage_aa = 0.0, dom_dosage_Aa = 0.0, dom_dosage_AA = 0.0;
+    double localMinDomDosage = 0.0, localMaxDomDosage = 0.0;
     std::string group;
 
-    if (scalePerVariant) {
-      // For per-variant scaling, calculate local min/max on the fly
-      localMinDomDosage =
-          std::min({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
-      localMaxDomDosage =
-          std::max({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
-    } else if (scaleByGroup && groupMap.find(variantId) != groupMap.end()) {
-      // For group-based scaling, use group-specific min/max
-      std::string groupName = groupMap.at(variantId);
-      localMinDomDosage = groupDosages.at(groupName).first;
-      localMaxDomDosage = groupDosages.at(groupName).second;
-      group = groupName;
+    if (mode == "dominance" || allInfo) {
+      r = static_cast<double>(aa_count) / non_missing_count;
+      h = static_cast<double>(Aa_count) / non_missing_count;
+      a = static_cast<double>(AA_count) / non_missing_count;
     }
-    // else: scaleGlobally uses globalMinDomDosage/globalMaxDomDosage (already
-    // set above)
+
+    if (mode == "dominance") {
+      dom_dosage_aa = -h * a;
+      dom_dosage_Aa = 2 * a * r;
+      dom_dosage_AA = -h * r;
+
+      if (scaleByGroup && groupMap.find(variantId) == groupMap.end()) {
+        if (discardedVariantsCount < warningLimit) {
+          std::cerr << "Warning: Variant '" << variantId
+                    << "' not found in group map. Discarding.\n";
+        }
+        discardedVariantsCount++;
+        continue;
+      }
+
+      localMinDomDosage = globalMinDomDosage;
+      localMaxDomDosage = globalMaxDomDosage;
+
+      if (scalePerVariant) {
+        // For per-variant scaling, calculate local min/max on the fly
+        localMinDomDosage =
+            std::min({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+        localMaxDomDosage =
+            std::max({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+      } else if (scaleByGroup && groupMap.find(variantId) != groupMap.end()) {
+        // For group-based scaling, use group-specific min/max
+        std::string groupName = groupMap.at(variantId);
+        localMinDomDosage = groupDosages.at(groupName).first;
+        localMaxDomDosage = groupDosages.at(groupName).second;
+        group = groupName;
+      }
+      // else: scaleGlobally uses globalMinDomDosage/globalMaxDomDosage (already set above)
+    }
 
     if (setVariantId) {
       variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
@@ -693,6 +705,10 @@ void processVcfFile(
 
     std::cout << "\tDS";
 
+    // Pre-allocate buffer for output line (estimate: ~10 bytes per sample on average)
+    std::string output_line;
+    output_line.reserve(n_samples * 10);
+
     // Output dosage values for each sample
     for (int i = 0; i < n_samples; ++i) {
       double dosage = 0.0;
@@ -701,8 +717,11 @@ void processVcfFile(
       float ds_value = has_ds ? ds_arr[i] : 0.0f;
 
       if (has_gt) {
-        int allele1_missing = bcf_gt_is_missing(gt_ptr[0]);
-        int allele2_missing = bcf_gt_is_missing(gt_ptr[1]);
+        // Read genotype values once and cache them
+        int gt0 = gt_ptr[0];
+        int gt1 = gt_ptr[1];
+        int allele1_missing = bcf_gt_is_missing(gt0);
+        int allele2_missing = bcf_gt_is_missing(gt1);
 
         if (allele1_missing && allele2_missing) {
           is_missing = true;
@@ -716,9 +735,9 @@ void processVcfFile(
                       << std::endl;
           }
         } else {
-          // Diploid (both present)
-          int allele1 = bcf_gt_allele(gt_ptr[0]);
-          int allele2 = bcf_gt_allele(gt_ptr[1]);
+          // Diploid (both present) - use cached values
+          int allele1 = bcf_gt_allele(gt0);
+          int allele2 = bcf_gt_allele(gt1);
           int geno = -1;
 
           if (allele1 == 0 && allele2 == 0)
@@ -804,13 +823,23 @@ void processVcfFile(
         is_missing = true;
       }
 
+      // Append to buffer instead of immediate output
+      output_line += '\t';
       if (is_missing) {
-        std::cout << "\t.";
+        output_line += '.';
+      } else if (mode == "recessive" && scalingFactor == 1.0) {
+        // Fast path for recessive mode with no scaling: only outputs "0" or "2"
+        output_line += (dosage == 0.0) ? '0' : '2';
       } else {
-        std::cout << "\t" << dosage;
+        // Convert dosage to string and append
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.6g", dosage);
+        output_line += buf;
       }
     }
-    std::cout << std::endl;
+
+    // Write entire line at once
+    std::cout << output_line << '\n';
   }
 
   free(gt_arr);
@@ -986,12 +1015,12 @@ int main(int argc, char *argv[]) {
   // Only do first pass if we need global or group-based scaling
   bool needTwoPass = scaleGlobally || !scaleByGroupPath.empty();
 
-  std::cerr << "  * Parsing specified genomic regions (Pass 1/2)..."
-            << std::endl;
-
-  auto pass1_start = std::chrono::steady_clock::now();
-
   if (needTwoPass) {
+    std::cerr << "  * Parsing specified genomic regions (Pass 1/2)..."
+              << std::endl;
+
+    auto pass1_start = std::chrono::steady_clock::now();
+
     calculateGlobalAndGroupDosages(fp, hdr, globalMinDomDosage,
                                    globalMaxDomDosage, n_samples, chromosomes,
                                    groupMap, groupDosages, hasMissingValues);
@@ -1005,32 +1034,21 @@ int main(int argc, char *argv[]) {
                    "skipped/imputed during calculation."
                 << std::endl;
     }
-  } else {
-    // For per-variant scaling or no scaling, just collect chromosomes
-    bcf1_t *rec = bcf_init();
-    long processedVariants = 0;
-    while (bcf_read(fp, hdr, rec) == 0) {
-      processedVariants++;
-      if (processedVariants % 5000 == 0) {
-        std::cerr << "\r[Pass 1: Parsing variants] Processed: " << processedVariants
-                  << std::flush;
-      }
-      chromosomes.insert(bcf_hdr_id2name(hdr, rec->rid));
+
+    auto pass1_end = std::chrono::steady_clock::now();
+    auto pass1_duration = std::chrono::duration_cast<std::chrono::seconds>(pass1_end - pass1_start);
+    std::cerr << "  * Pass 1 completed in " << pass1_duration.count() << " seconds" << std::endl;
+
+    // Validate that we found at least one variant
+    if (chromosomes.empty()) {
+      std::cerr << "Error: VCF file contains no variants." << std::endl;
+      bcf_hdr_destroy(hdr);
+      bcf_close(fp);
+      return 1;
     }
-    std::cerr << std::endl;
-    bcf_destroy(rec);
-  }
-
-  auto pass1_end = std::chrono::steady_clock::now();
-  auto pass1_duration = std::chrono::duration_cast<std::chrono::seconds>(pass1_end - pass1_start);
-  std::cerr << "  * Pass 1 completed in " << pass1_duration.count() << " seconds" << std::endl;
-
-  // Validate that we found at least one variant
-  if (chromosomes.empty()) {
-    std::cerr << "Error: VCF file contains no variants." << std::endl;
-    bcf_hdr_destroy(hdr);
-    bcf_close(fp);
-    return 1;
+  } else {
+    std::cerr << "  * Single-pass mode: chromosomes will be collected during processing"
+              << std::endl;
   }
 
   // For dominance mode with global/group scaling, validate we found
@@ -1046,34 +1064,49 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  std::vector<std::string> sortedContigs = sortChromosomes(chromosomes);
-  bcf_close(fp);
-
-  // Reopen file for actual processing
-  fp = bcf_open(pathInput.c_str(), "r");
-  if (!fp) {
-    std::cerr << "Error: Cannot open VCF/BCF file for reading: " << pathInput
-              << std::endl;
-    return 1;
-  }
-
-  hdr = bcf_hdr_read(fp);
-
   bool scaleByGroup = !scaleByGroupPath.empty();
-  printHeader(hdr, sortedContigs, mode, globalMinDomDosage, globalMaxDomDosage,
-              allInfo, scalePerVariant, scaleGlobally, scaleByGroup);
 
-  std::cerr << "  * Writing variants (Pass 2/2)..." << std::endl;
+  // If we did two passes, we need to reopen the file
+  if (needTwoPass) {
+    std::vector<std::string> sortedContigs = sortChromosomes(chromosomes);
+    bcf_close(fp);
+
+    // Reopen file for actual processing
+    fp = bcf_open(pathInput.c_str(), "r");
+    if (!fp) {
+      std::cerr << "Error: Cannot open VCF/BCF file for reading: " << pathInput
+                << std::endl;
+      return 1;
+    }
+
+    hdr = bcf_hdr_read(fp);
+
+    printHeader(hdr, sortedContigs, mode, globalMinDomDosage, globalMaxDomDosage,
+                allInfo, scalePerVariant, scaleGlobally, scaleByGroup);
+
+    std::cerr << "  * Writing variants (Pass 2/2)..." << std::endl;
+  } else {
+    // Single pass mode - print header without contigs (we'll collect them during processing)
+    std::vector<std::string> emptyContigs;
+    printHeader(hdr, emptyContigs, mode, globalMinDomDosage, globalMaxDomDosage,
+                allInfo, scalePerVariant, scaleGlobally, scaleByGroup);
+
+    std::cerr << "  * Processing variants (single pass)..." << std::endl;
+  }
 
   auto pass2_start = std::chrono::steady_clock::now();
 
   processVcfFile(fp, hdr, mode, globalMinDomDosage, globalMaxDomDosage, allInfo,
                  scalePerVariant, scaleGlobally, scaleByGroup, setVariantId,
-                 scalingFactor, groupMap, groupDosages);
+                 scalingFactor, groupMap, groupDosages, chromosomes);
 
   auto pass2_end = std::chrono::steady_clock::now();
   auto pass2_duration = std::chrono::duration_cast<std::chrono::seconds>(pass2_end - pass2_start);
-  std::cerr << "  * Pass 2 completed in " << pass2_duration.count() << " seconds" << std::endl;
+  if (needTwoPass) {
+    std::cerr << "  * Pass 2 completed in " << pass2_duration.count() << " seconds" << std::endl;
+  } else {
+    std::cerr << "  * Processing completed in " << pass2_duration.count() << " seconds" << std::endl;
+  }
 
   bcf_hdr_destroy(hdr);
   bcf_close(fp);
