@@ -1,60 +1,75 @@
-# Call Compound Heterozygous Variants
+# Create a VCF with nonadditive encoding
 
-A collection of C++ tools for detecting compound heterozygous variants from phased genetic data.
+Efficient C++ tools for detecting biallelic (compound heterozygous or homozygous) variants and/or recoding them to either recessive or nonadditive genotypes.
+
+## Tools
+All binaries are compiled to `bin/`. Legacy names are preserved as symlinks but deprecated.
+- `interpret_phase` (formerly `call_chets`): Core tool to identify compound heterozygous variants from phased data.
+- `make_pseudo_vcf` (formerly `encode_vcf`): Converts phased results into a VCF.
+- `recode` (formerly `orthogonalize`): Transforms VCFs with orthogonal dominance or recessive encodings.
+- `filter_pp` (formerly `filter_vcf_by_pp`): Filters VCFs based on posterior probabilities.
 
 ## Installation
 
 ### From Source
-1. Install required C++ libraries (see `Dockerfile` for dependencies)
-2. Install [BCFtools](https://samtools.github.io/bcftools/howtos/install.html)
-3. Compile:
-   ```
-   make
-   ```
+Requirements: `htslib` (bundled or system), `zlib`, `g++`, `make`.
+
+```bash
+make
+sudo make install # Optional: installs to /usr/local/bin
+```
 
 ### Docker
 ```bash
-# Build locally
+# Build
 ./build_docker.sh
 
-# Or pull from DockerHub
-docker pull fhlassen/call_chets:0.3.3
-
-# Run container
-docker run -it call_chets:0.3.3
+# Run
+docker run -it call_chets:latest
 ```
 
-## Usage
+## Quick Start
+*Note: Examples assume you ran `make install`. If not, prefix commands with `bin/` (e.g., `bin/interpret_phase`).*
 
-### 1. Create Phased Sites File
-Filter variants and extract phased genotypes:
+### 1/3. Prepare Data
+Extract phased genotypes from your VCF:
 ```bash
-bcftools view trio.vcf --max-af 0.01 -Ou | bcftools query -i'GT="alt"' -f'[%SAMPLE %CHROM:%POS:%REF:%ALT %GT\n]' | gzip > trio.phased_sites.txt.gz
+bcftools view trio.vcf --max-af 0.01 -Ou | \
+  bcftools query -i'GT="alt"' -f'[%SAMPLE %CHROM:%POS:%REF:%ALT %GT\n]' | \
+  gzip > trio.phased_sites.txt.gz
 ```
 
-### 2. Call Variants
-Identify compound heterozygous variants per gene:
+### 2/3. Call Variants
+Run `interpret_phase` using a gene mapping file:
 ```bash
-./call_chets \
-  --geno trio.phased_sites.txt.gz \
+interpret_phase \
+  --geno genotypes.txt.gz \
   --gene-map gene_map.txt \
-  --verbose > trio.result.txt
+  --verbose > results.txt
 ```
 
-Optional: Add variant information with `--info-map`:
+For unphased data, add the `--unphased` flag:
 ```bash
-./call_chets \
-  --geno trio.phased_sites.txt.gz \
+interpret_phase \
+  --geno genotypes.txt.gz \
   --gene-map gene_map.txt \
-  --info-map info_map.txt > trio.result.txt
+  --unphased > results.txt
 ```
 
-### 3. Generate VCF
-Convert results to VCF format:
+### 3/3. Convert to VCF
+Create a VCF with nonadditive (domiannce) dosages:
 ```bash
-./encode_vcf \
-  --input trio.result.txt \
+make_pseudo_vcf \
+  --input results.txt \
   --samples samples.txt \
-  --mode additive \
-  --min-ac 1 | bgzip > trio.result.vcf.gz
+  --mode dominance \
+  --min-ac 1 | bgzip > output.vcf.gz
+```
+
+### 4. Recode
+You can also recode any VCF directly (either with or without phased information) into orthogonal or recessive encodings:
+```bash
+recode \
+  --input any_variant_file.vcf.gz \
+  --mode dominance | bgzip > recoded.vcf.gz
 ```
