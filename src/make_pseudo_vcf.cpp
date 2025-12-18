@@ -4,6 +4,7 @@
 #include <cmath>
 #include <ctime>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -12,6 +13,71 @@
 #include <string>
 #include <vector>
 #include <zlib.h>
+
+// Struct for encoding preview examples
+struct EncodingExample {
+  std::string gene;
+  float r, h, a;
+  float raw_aa, raw_Aa, raw_AA;
+  float scaled_aa, scaled_Aa, scaled_AA;
+  int ac;
+};
+
+// Print encoding preview to stderr
+void printEncodingPreview(const std::vector<EncodingExample> &examples,
+                          bool hasScaling, bool hasMore) {
+  if (examples.empty())
+    return;
+
+  std::cerr << "\n  * Encoding Preview (first " << examples.size()
+            << " genes):" << std::endl;
+
+  if (hasScaling) {
+    std::cerr
+        << "      Gene        | r      | h      | a      | Raw: aa   | Raw: Aa "
+           "  | Raw: AA   | Scaled: aa | Scaled: Aa | Scaled: AA | AC"
+        << std::endl;
+    std::cerr << "      "
+                 "------------|--------|--------|--------|-----------|---------"
+                 "--|-----------|------------|------------|------------|----"
+              << std::endl;
+
+    for (const auto &ex : examples) {
+      std::cerr << "      " << std::left << std::setw(12)
+                << ex.gene.substr(0, 12) << "| " << std::fixed
+                << std::setprecision(4) << std::setw(6) << ex.r << " | "
+                << std::setw(6) << ex.h << " | " << std::setw(6) << ex.a
+                << " | " << std::setprecision(6) << std::setw(9) << ex.raw_aa
+                << " | " << std::setw(9) << ex.raw_Aa << " | " << std::setw(9)
+                << ex.raw_AA << " | " << std::setw(10) << ex.scaled_aa << " | "
+                << std::setw(10) << ex.scaled_Aa << " | " << std::setw(10)
+                << ex.scaled_AA << " | " << ex.ac << std::endl;
+    }
+  } else {
+    std::cerr << "      Gene        | r      | h      | a      | aa (hom ref) "
+                 "| Aa (het)  | AA (hom alt) | AC"
+              << std::endl;
+    std::cerr << "      "
+                 "------------|--------|--------|--------|--------------|------"
+                 "-----|--------------|----"
+              << std::endl;
+
+    for (const auto &ex : examples) {
+      std::cerr << "      " << std::left << std::setw(12)
+                << ex.gene.substr(0, 12) << "| " << std::fixed
+                << std::setprecision(4) << std::setw(6) << ex.r << " | "
+                << std::setw(6) << ex.h << " | " << std::setw(6) << ex.a
+                << " | " << std::setprecision(6) << std::setw(12) << ex.raw_aa
+                << " | " << std::setw(9) << ex.raw_Aa << " | " << std::setw(12)
+                << ex.raw_AA << " | " << ex.ac << std::endl;
+    }
+  }
+
+  if (hasMore) {
+    std::cerr << "      (truncated...)" << std::endl;
+  }
+  std::cerr << std::endl;
+}
 
 void printUsage(const char *path) {
   // Get version info
@@ -417,6 +483,11 @@ int main(int argc, char *argv[]) {
   float globalMinDomDosage = std::numeric_limits<float>::max();
   float globalMaxDomDosage = std::numeric_limits<float>::min();
 
+  // Collect first 5 genes for encoding preview
+  std::vector<EncodingExample> encodingExamples;
+  const int MAX_EXAMPLES = 5;
+  int totalGenesProcessed = 0;
+
   if (globalDomDosage && mode == "dominance") {
 
     for (const auto &gene : geneAC) {
@@ -440,7 +511,123 @@ int main(int argc, char *argv[]) {
           {globalMinDomDosage, dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
       globalMaxDomDosage = std::max(
           {globalMaxDomDosage, dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+
+      totalGenesProcessed++;
     }
+
+    // Second pass to collect examples with scaled values (now that we have
+    // global min/max)
+    for (const auto &gene : geneAC) {
+      if (encodingExamples.size() >= MAX_EXAMPLES)
+        break;
+
+      // Skip genes with no homozygotes (they won't be output anyway)
+      if (geneBI[gene.first] == 0)
+        continue;
+
+      int currentAN = samples.size() * 2;
+      float aa_count = static_cast<float>(
+          (currentAN / 2) -
+          (geneCis[gene.first] + geneHet[gene.first] + geneBI[gene.first]));
+      float Aa_count =
+          static_cast<float>(geneHet[gene.first] + geneCis[gene.first]);
+      float AA_count = static_cast<float>(geneBI[gene.first]);
+
+      float r = aa_count / (currentAN / 2);
+      float h = Aa_count / (currentAN / 2);
+      float a = AA_count / (currentAN / 2);
+
+      float dom_dosage_aa = -h * a;
+      float dom_dosage_Aa = 2 * a * r;
+      float dom_dosage_AA = -h * r;
+
+      EncodingExample ex;
+      ex.gene = gene.first;
+      ex.r = r;
+      ex.h = h;
+      ex.a = a;
+      ex.raw_aa = dom_dosage_aa;
+      ex.raw_Aa = dom_dosage_Aa;
+      ex.raw_AA = dom_dosage_AA;
+      ex.scaled_aa = 2 * ((dom_dosage_aa - globalMinDomDosage) /
+                          (globalMaxDomDosage - globalMinDomDosage));
+      ex.scaled_Aa = 2 * ((dom_dosage_Aa - globalMinDomDosage) /
+                          (globalMaxDomDosage - globalMinDomDosage));
+      ex.scaled_AA = 2 * ((dom_dosage_AA - globalMinDomDosage) /
+                          (globalMaxDomDosage - globalMinDomDosage));
+      ex.ac = gene.second;
+      encodingExamples.push_back(ex);
+    }
+
+    // Print global scaling info
+    std::cerr << "\n  * Global Dominance Scaling:" << std::endl;
+    std::cerr << "      + Min Dosage: " << std::fixed << std::setprecision(6)
+              << globalMinDomDosage << std::endl;
+    std::cerr << "      + Max Dosage: " << globalMaxDomDosage << std::endl;
+    std::cerr << "      + Target Range: [0.0, 2.0]" << std::endl;
+
+    // Print encoding preview
+    printEncodingPreview(encodingExamples, true,
+                         totalGenesProcessed > MAX_EXAMPLES);
+  }
+
+  // For non-global dominance mode or other modes, collect examples separately
+  if (!globalDomDosage && mode == "dominance") {
+    for (const auto &gene : geneAC) {
+      // Skip genes with no homozygotes (they won't be output anyway)
+      if (geneBI[gene.first] == 0)
+        continue;
+
+      // Skip if not meeting AC filter criteria
+      if (gene.second < minAC || gene.second >= maxAC)
+        continue;
+
+      if (encodingExamples.size() >= MAX_EXAMPLES) {
+        totalGenesProcessed++;
+        continue;
+      }
+
+      int currentAN = samples.size() * 2;
+      float aa_count = static_cast<float>(
+          (currentAN / 2) -
+          (geneCis[gene.first] + geneHet[gene.first] + geneBI[gene.first]));
+      float Aa_count =
+          static_cast<float>(geneHet[gene.first] + geneCis[gene.first]);
+      float AA_count = static_cast<float>(geneBI[gene.first]);
+
+      float r = aa_count / (currentAN / 2);
+      float h = Aa_count / (currentAN / 2);
+      float a = AA_count / (currentAN / 2);
+
+      float dom_dosage_aa = -h * a;
+      float dom_dosage_Aa = 2 * a * r;
+      float dom_dosage_AA = -h * r;
+
+      // Per-variant min/max
+      float minDom = std::min({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+      float maxDom = std::max({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
+
+      EncodingExample ex;
+      ex.gene = gene.first;
+      ex.r = r;
+      ex.h = h;
+      ex.a = a;
+      ex.raw_aa = dom_dosage_aa;
+      ex.raw_Aa = dom_dosage_Aa;
+      ex.raw_AA = dom_dosage_AA;
+      ex.scaled_aa = 2 * ((dom_dosage_aa - minDom) / (maxDom - minDom));
+      ex.scaled_Aa = 2 * ((dom_dosage_Aa - minDom) / (maxDom - minDom));
+      ex.scaled_AA = 2 * ((dom_dosage_AA - minDom) / (maxDom - minDom));
+      ex.ac = gene.second;
+      encodingExamples.push_back(ex);
+      totalGenesProcessed++;
+    }
+
+    std::cerr << "\n  * Per-Gene Dominance Scaling (each gene scaled "
+                 "independently to [0, 2])"
+              << std::endl;
+    printEncodingPreview(encodingExamples, true,
+                         totalGenesProcessed > MAX_EXAMPLES);
   }
 
   // sort chromosomes

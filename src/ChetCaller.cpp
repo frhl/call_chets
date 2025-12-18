@@ -70,6 +70,78 @@ void ChetCaller::printStats() {
               << std::setprecision(3) << pRef << "%, "
               << "1=" << pAlt << "%]" << std::endl;
   }
+
+  // Log sample count
+  if (stats.nSamples > 0) {
+    std::cerr << "  * Samples: " << stats.nSamples << std::endl;
+  }
+
+  // Phase 1: Mapping Statistics (always show)
+  if (stats.nGenesInMapping > 0 || stats.nVariantsInMapping > 0) {
+    std::cerr << "  * Mapping Statistics:" << std::endl;
+    std::cerr << "      + Genes in mapping file    : " << stats.nGenesInMapping
+              << std::endl;
+    std::cerr << "      + Genes with variants found: "
+              << stats.nGenesWithVariants;
+
+    if (stats.nGenesInMapping > 0) {
+      double pct =
+          (double)stats.nGenesWithVariants / stats.nGenesInMapping * 100.0;
+      std::cerr << " (" << std::fixed << std::setprecision(1) << pct << "%)";
+    }
+    std::cerr << std::endl;
+
+    std::cerr << "      + Variants in mapping file : "
+              << stats.nVariantsInMapping << std::endl;
+    std::cerr << "      + Variants found in VCF    : " << stats.nVariantsKept;
+
+    if (stats.nVariantsInMapping > 0) {
+      double pct =
+          (double)stats.nVariantsKept / stats.nVariantsInMapping * 100.0;
+      std::cerr << " (" << std::fixed << std::setprecision(1) << pct << "%)";
+    }
+    std::cerr << std::endl;
+
+    if (stats.nMultiGeneVariants > 0) {
+      std::cerr << "      + Multi-gene variants      : "
+                << stats.nMultiGeneVariants << std::endl;
+    }
+  }
+
+  // Phase 3: Variant Distribution (verbose only)
+  if (verbose && !geneVariantCounts.empty()) {
+    int genes_1 = 0, genes_2_5 = 0, genes_6_10 = 0, genes_10plus = 0;
+
+    for (const auto &pair : geneVariantCounts) {
+      int count = pair.second;
+      if (count == 1)
+        genes_1++;
+      else if (count <= 5)
+        genes_2_5++;
+      else if (count <= 10)
+        genes_6_10++;
+      else
+        genes_10plus++;
+    }
+
+    std::cerr << "  * Variant Distribution (per gene):" << std::endl;
+    std::cerr << "      - Genes with 1 variant   : " << genes_1 << std::endl;
+    std::cerr << "      - Genes with 2-5 variants: " << genes_2_5 << std::endl;
+    std::cerr << "      - Genes with 6-10 variants: " << genes_6_10
+              << std::endl;
+    std::cerr << "      - Genes with >10 variants: " << genes_10plus
+              << std::endl;
+  }
+
+  // Log warnings for unphased variants in phased mode
+  if (!unphasedMode && stats.nVariantsUnphased > 0) {
+    double pUnphased =
+        (double)stats.nVariantsUnphased / stats.nVariantsTotal * 100.0;
+    std::cerr << "  * Warnings:" << std::endl;
+    std::cerr << "      - Unphased variants skipped: "
+              << stats.nVariantsUnphased << " (" << std::fixed
+              << std::setprecision(1) << pUnphased << "%)" << std::endl;
+  }
 }
 
 bool ChetCaller::isValidVariantFormat(const std::string &variant) {
@@ -108,6 +180,7 @@ bool ChetCaller::loadGeneMap(const std::string &path) {
 
   std::string variant, gene;
   std::set<std::string> genes;
+  std::set<std::string> variants; // Track unique variants in mapping
 
   while (gzgets(mappingFile, buf, sizeof(buf))) {
     mappingLineCount++;
@@ -151,8 +224,9 @@ bool ChetCaller::loadGeneMap(const std::string &path) {
           }
         } else {
           variantToGene[variant].push_back(gene);
-          genes.insert(gene);      // Add gene to set for unique count
-          stats.nVariantsMapped++; // Increment mapped variants
+          genes.insert(gene);       // Track unique genes
+          variants.insert(variant); // Track unique variants
+          stats.nVariantsMapped++;  // Increment mapped variants
         }
         validMappingLines++;
       }
@@ -162,6 +236,8 @@ bool ChetCaller::loadGeneMap(const std::string &path) {
   gzclose(mappingFile);
 
   stats.nGenesMapped = genes.size();
+  stats.nGenesInMapping = genes.size();       // Total genes in mapping file
+  stats.nVariantsInMapping = variants.size(); // Total variants in mapping file
 
   if (validMappingLines == 0) {
     std::cerr << "Error: No valid mapping data found in: " << path << std::endl;
@@ -184,9 +260,9 @@ bool ChetCaller::loadInfoMap(const std::string &path) {
     return true; // Not a fatal error
   }
 
-  // Check empty handled by simple read check loop or externally, skipping
-  // explicit check for brevity as usage pattern suggests simple read loop is
-  // fine usually. But let's check basic read.
+  // Check empty handled by simple read check loop or externally,
+  // skipping explicit check for brevity as usage pattern suggests
+  // simple read loop is fine usually. But let's check basic read.
 
   char infoBuf[4096];
   bool isFirstLine = true;
@@ -217,10 +293,11 @@ bool ChetCaller::loadInfoMap(const std::string &path) {
 
     if (ss.fail() || ss.bad()) {
       if (!isFirstLine) {
-        std::cerr
-            << "Error: Failed to extract variant, gene, and info from line "
-            << infoLineCount << ": '" << line
-            << "'. Please, fix this line in --info-map and retry." << std::endl;
+        std::cerr << "Error: Failed to extract variant, gene, and info "
+                     "from line "
+                  << infoLineCount << ": '" << line
+                  << "'. Please, fix this line in --info-map and retry."
+                  << std::endl;
         gzclose(infoMapFile);
         return false;
       }
@@ -288,11 +365,11 @@ bool ChetCaller::loadScoreMap(const std::string &path) {
 
     if (ss.fail() || ss.bad()) {
       if (!isFirstLine) {
-        std::cerr
-            << "Error: Failed to extract variant, gene, and score from line "
-            << scoreLineCount << ": '" << line
-            << "'. Please, fix this line in --score-map and retry."
-            << std::endl;
+        std::cerr << "Error: Failed to extract variant, gene, and score "
+                     "from line "
+                  << scoreLineCount << ": '" << line
+                  << "'. Please, fix this line in --score-map and retry."
+                  << std::endl;
         gzclose(scoreMapFile);
         return false;
       }
@@ -329,7 +406,8 @@ bool ChetCaller::loadScoreMap(const std::string &path) {
 
   if (invalidScoreValues > 0) {
     std::cerr << "Warning: " << invalidScoreValues
-              << " scores in score-map file are outside the valid range [0-1]."
+              << " scores in score-map file are outside the valid "
+                 "range [0-1]."
               << std::endl;
   }
 
@@ -360,10 +438,15 @@ bool ChetCaller::processGenotypes(const std::string &path) {
   uniqueVariantsKept.clear();
   uniqueVariantsDiscarded.clear();
   multiGeneVariants.clear();
+  geneVariantCounts.clear();
+
+  // Track genes with variants found in VCF
+  std::set<std::string> genesWithVariantsFound;
 
   // Runtime stats are preserved (specifically gene map stats)
-  // Genotype stats are cumulative or started from 0 if this is first run.
-  // stats = RunStats(); // Removed to prevent wiping gene map stats
+  // Genotype stats are cumulative or started from 0 if this is first
+  // run. stats = RunStats(); // Removed to prevent wiping gene map
+  // stats
 
   std::set<std::string> seenVariants;
 
@@ -408,7 +491,8 @@ bool ChetCaller::processGenotypes(const std::string &path) {
           isFirstLine = false;
           continue;
         }
-        // Otherwise assume first line is just skipped or invalid header
+        // Otherwise assume first line is just skipped or invalid
+        // header
         isFirstLine = false;
         continue;
       }
@@ -422,8 +506,8 @@ bool ChetCaller::processGenotypes(const std::string &path) {
 
       if (variantToGene.find(variant) != variantToGene.end()) {
         stats.nVariantsKept++;
-        // uniqueVariantsKept.insert(variant); // Will be inserted below
-        // per-line logic if needed, or here efficienty
+        // uniqueVariantsKept.insert(variant); // Will be inserted
+        // below per-line logic if needed, or here efficienty
       } else {
         stats.nVariantsFiltered++;
         stats.nSitesRemovedInMainPanel++;
@@ -480,6 +564,13 @@ bool ChetCaller::processGenotypes(const std::string &path) {
                   << std::endl;
       }
       skippedGenoLines++;
+
+      // Track unphased variants in phased mode
+      if (variantToGene.find(variant) != variantToGene.end()) {
+        // Only count if variant is in gene map (i.e., would have been
+        // processed)
+        stats.nVariantsUnphased++;
+      }
       continue;
     }
 
@@ -502,8 +593,8 @@ bool ChetCaller::processGenotypes(const std::string &path) {
     }
 
     if (!validGenotype) {
-      // Only warn if not 0/0 (which is valid but skipped for processing
-      // usually)
+      // Only warn if not 0/0 (which is valid but skipped for
+      // processing usually)
       if (genotype != "0/0" && genotype != "0|0" &&
           genotype.find('.') == std::string::npos) {
         invalidGenotypeFormat++;
@@ -516,23 +607,34 @@ bool ChetCaller::processGenotypes(const std::string &path) {
                     << ". Expected values: " << expectedFormat << "."
                     << std::endl;
         } else if (invalidGenotypeFormat == 11) {
-          std::cerr << "Warning: Additional invalid genotype formats found. "
+          std::cerr << "Warning: Additional invalid genotype formats "
+                       "found. "
                        "Suppressing further warnings."
                     << std::endl;
         }
       }
-      // We skip non-het/hom-alt lines for actual calling per original logic
+      // We skip non-het/hom-alt lines for actual calling per original
+      // logic
       skippedGenoLines++;
       continue;
     }
 
     if (variantToGene.find(variant) != variantToGene.end()) {
+      // Track multi-gene variants
       if (variantToGene[variant].size() > 1) {
         multiGeneVariants.insert(variant);
       }
 
       for (const auto &gene : variantToGene[variant]) {
         uniqueVariantsKept.insert(variant);
+
+        // Track genes with variants found
+        genesWithVariantsFound.insert(gene);
+
+        // For verbose mode: track variant counts per gene
+        if (verbose) {
+          geneVariantCounts[gene]++;
+        }
 
         if (unphasedMode) {
           if (normalizedGenotype == "0/1") {
@@ -558,18 +660,20 @@ bool ChetCaller::processGenotypes(const std::string &path) {
     } else {
       uniqueVariantsDiscarded.insert(variant);
     }
-
     validGenoLines++;
   }
 
   gzclose(genotypeFile);
+  std::cerr << std::endl; // Clear progress line
+
+  // Update sample count
+  stats.nSamples = uniqueSamples.size();
+
+  // Update mapping statistics
+  stats.nGenesWithVariants = genesWithVariantsFound.size();
+  stats.nMultiGeneVariants = multiGeneVariants.size();
+
   if (verbose) {
-    std::cerr << "Found " << uniqueSamples.size()
-              << " unique samples in genotype file." << std::endl;
-    std::cerr << "Variants in mapping file (kept): "
-              << uniqueVariantsKept.size() << std::endl;
-    std::cerr << "Variants not in mapping file (Discarded): "
-              << uniqueVariantsDiscarded.size() << std::endl;
     std::cerr << "Variants mapping to more than one gene: "
               << multiGeneVariants.size() << std::endl;
   }
@@ -580,8 +684,8 @@ bool ChetCaller::processGenotypes(const std::string &path) {
   }
 
   if (validGenoLines == 0) {
-    // If we had lines but none were valid, that's an error for "all wrong
-    // columns" or "no data" tests
+    // If we had lines but none were valid, that's an error for "all
+    // wrong columns" or "no data" tests
     std::cerr << "Error: No valid genotype lines processed." << std::endl;
     return false;
   }
@@ -794,7 +898,8 @@ void ChetCaller::printResults() const {
   std::vector<ChetResult> results = getResults();
 
   if (results.empty()) {
-    std::cerr << "Warning: No results were generated. Check your input files "
+    std::cerr << "Warning: No results were generated. Check your "
+                 "input files "
                  "and parameters."
               << std::endl;
     return;

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <htslib/hts.h>
 #include <htslib/vcf.h>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -15,6 +16,53 @@
 
 #include "logging.hpp"
 #include "version.hpp"
+
+// Struct for variant encoding preview
+struct VariantEncodingExample {
+  std::string variantId;
+  float r, h, a;
+  float raw_aa, raw_Aa, raw_AA;
+  float scaled_aa, scaled_Aa, scaled_AA;
+  float variantMin, variantMax;
+};
+
+// Print variant encoding preview to stderr
+void printVariantEncodingPreview(
+    const std::vector<VariantEncodingExample> &examples,
+    const std::string &scalingMode, bool hasMore) {
+  if (examples.empty())
+    return;
+
+  std::cerr << "\n  * Encoding Preview (first " << examples.size()
+            << " variants):" << std::endl;
+  std::cerr << "      Variant          | r      | h      | a      | Raw: aa   "
+               "| Raw: Aa   | Raw: AA   | Scaled: aa | Scaled: Aa | Scaled: AA"
+            << std::endl;
+  std::cerr << "      "
+               "-----------------|--------|--------|--------|-----------|------"
+               "-----|-----------|------------|------------|------------"
+            << std::endl;
+
+  for (const auto &ex : examples) {
+    // Truncate variant ID to 17 chars for display
+    std::string displayId =
+        ex.variantId.length() > 17 ? ex.variantId.substr(0, 17) : ex.variantId;
+
+    std::cerr << "      " << std::left << std::setw(17) << displayId << "| "
+              << std::fixed << std::setprecision(4) << std::setw(6) << ex.r
+              << " | " << std::setw(6) << ex.h << " | " << std::setw(6) << ex.a
+              << " | " << std::setprecision(6) << std::setw(9) << ex.raw_aa
+              << " | " << std::setw(9) << ex.raw_Aa << " | " << std::setw(9)
+              << ex.raw_AA << " | " << std::setw(10) << ex.scaled_aa << " | "
+              << std::setw(10) << ex.scaled_Aa << " | " << ex.scaled_AA
+              << std::endl;
+  }
+
+  if (hasMore) {
+    std::cerr << "      (truncated...)" << std::endl;
+  }
+  std::cerr << std::endl;
+}
 
 void printUsage(const char *path) {
   // Get version info
@@ -213,7 +261,8 @@ bool hasFormat(const bcf_hdr_t *hdr, const char *format) {
 
 void processSampleGenotypes(int *gt_ptr, float ds_value, bool has_gt,
                             bool has_ds, int &aa_count, int &Aa_count,
-                            int &AA_count, int &non_missing_count) {
+                            int &AA_count, int &non_missing_count,
+                            long &roundedDosageCount) {
   if (has_gt &&
       (!bcf_gt_is_missing(gt_ptr[0]) && !bcf_gt_is_missing(gt_ptr[1]))) {
     // Use GT if available
@@ -229,6 +278,9 @@ void processSampleGenotypes(int *gt_ptr, float ds_value, bool has_gt,
   } else if (has_ds && !std::isnan(ds_value)) {
     // Round DS value to nearest integer
     int rounded_ds = std::round(ds_value);
+    if (std::abs(ds_value - rounded_ds) > 1e-4) {
+      roundedDosageCount++;
+    }
     if (rounded_ds < 0 || rounded_ds > 2) {
       std::cerr << "Warning: DS value " << ds_value
                 << " out of range [0,2]. Skipping.\n";
@@ -257,6 +309,7 @@ void calculateGlobalAndGroupDosages(
   int *gt_arr = NULL, ngt_arr = 0;
   float *ds_arr = NULL;
   int nds_arr = 0;
+  long roundedDosageCount = 0; // Local counter for this pass
 
   bool has_gt = hasFormat(hdr, "GT");
   bool has_ds = hasFormat(hdr, "DS");
@@ -276,7 +329,8 @@ void calculateGlobalAndGroupDosages(
       float ds_value = has_ds ? ds_arr[i] : 0.0f;
 
       processSampleGenotypes(gt_ptr, ds_value, has_gt, has_ds, aa_count,
-                             Aa_count, AA_count, non_missing_count);
+                             Aa_count, AA_count, non_missing_count,
+                             roundedDosageCount);
     }
 
     if (non_missing_count < n_samples) {
@@ -399,6 +453,12 @@ void processVcfFile(
   long keptVariants = 0;
   const double lowVarianceThreshold =
       0.0001; // Warn if any two genotype dosages differ by less than this
+  long roundedDosageCount = 0;
+
+  // Variables for output preview
+  std::vector<VariantEncodingExample> encodingExamples;
+  bool previewPrinted = false;
+  const int MAX_EXAMPLES = 5;
 
   bool has_gt = hasFormat(hdr, "GT");
   bool has_ds = hasFormat(hdr, "DS");
@@ -434,7 +494,8 @@ void processVcfFile(
       float ds_value = (has_ds && ds_arr) ? ds_arr[i] : 0.0f;
 
       processSampleGenotypes(gt_ptr, ds_value, has_gt, has_ds, aa_count,
-                             Aa_count, AA_count, non_missing_count);
+                             Aa_count, AA_count, non_missing_count,
+                             roundedDosageCount);
     }
 
     // For dominance mode, we need at least one homozygous alternate
@@ -503,6 +564,56 @@ void processVcfFile(
       variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
                   std::to_string(rec->pos + 1) + ":" + rec->d.allele[0] + ":" +
                   (rec->n_allele > 1 ? rec->d.allele[1] : ".");
+    }
+
+    // Collection for encoding preview
+    if (mode == "dominance" && !previewPrinted &&
+        encodingExamples.size() < MAX_EXAMPLES) {
+      VariantEncodingExample ex;
+      ex.variantId = variantId;
+      ex.r = r;
+      ex.h = h;
+      ex.a = a;
+      ex.raw_aa = -h * a;
+      ex.raw_Aa = 2 * a * r;
+      ex.raw_AA = -h * r;
+      ex.variantMin = localMinDomDosage;
+      ex.variantMax = localMaxDomDosage;
+
+      if (scalePerVariant || scaleGlobally || scaleByGroup) {
+        ex.scaled_aa = 2 * ((ex.raw_aa - localMinDomDosage) /
+                            (localMaxDomDosage - localMinDomDosage));
+        ex.scaled_Aa = 2 * ((ex.raw_Aa - localMinDomDosage) /
+                            (localMaxDomDosage - localMinDomDosage));
+        ex.scaled_AA = 2 * ((ex.raw_AA - localMinDomDosage) /
+                            (localMaxDomDosage - localMinDomDosage));
+      } else {
+        ex.scaled_aa = ex.raw_aa;
+        ex.scaled_Aa = ex.raw_Aa;
+        ex.scaled_AA = ex.raw_AA;
+      }
+
+      if (scalingFactor != 0 && scalingFactor != 1.0) {
+        ex.scaled_aa *= scalingFactor;
+        ex.scaled_Aa *= scalingFactor;
+        ex.scaled_AA *= scalingFactor;
+      }
+      encodingExamples.push_back(ex);
+
+      if (encodingExamples.size() >= MAX_EXAMPLES) {
+        std::string modeStr = "";
+        if (scaleGlobally)
+          modeStr = "Global";
+        else if (scalePerVariant)
+          modeStr = "Per-Variant";
+        else if (scaleByGroup)
+          modeStr = "By-Group";
+        else
+          modeStr = "None"; // Or Raw
+
+        printVariantEncodingPreview(encodingExamples, modeStr, true);
+        previewPrinted = true;
+      }
     }
 
     // Output variant information
@@ -650,6 +761,28 @@ void processVcfFile(
   free(ds_arr);
   bcf_destroy(rec);
 
+  // If we collected fewer than MAX_EXAMPLES, print them now
+  if (mode == "dominance" && !previewPrinted && !encodingExamples.empty()) {
+    std::string modeStr = "";
+    if (scaleGlobally)
+      modeStr = "Global";
+    else if (scalePerVariant)
+      modeStr = "Per-Variant";
+    else if (scaleByGroup)
+      modeStr = "By-Group";
+    else
+      modeStr = "None"; // Or Raw
+
+    if (!scaleGlobally && !scalePerVariant && !scaleByGroup)
+      modeStr = "No Scaling";
+
+    if (scalingFactor != 1.0 && scalingFactor != 0) {
+      modeStr += " (Factor: " + std::to_string(scalingFactor) + ")";
+    }
+
+    printVariantEncodingPreview(encodingExamples, modeStr, false);
+  }
+
   // Print runtime statistics
   std::cerr << std::endl; // Clear progress line
   std::cerr << "\nProcessing complete:" << std::endl;
@@ -671,6 +804,14 @@ void processVcfFile(
   if (lowVarianceVariantsCount > 0) {
     std::cerr << "  * Warnings:" << std::endl;
     std::cerr << "      - Low variance dosages : " << lowVarianceVariantsCount
+              << std::endl;
+  }
+  if (roundedDosageCount > 0) {
+    if (lowVarianceVariantsCount == 0)
+      std::cerr << "  * Warnings:" << std::endl;
+    std::cerr << "      - Rounded dosages      : " << roundedDosageCount
+              << std::endl;
+    std::cerr << "        (DS values were rounded to nearest integer)"
               << std::endl;
   }
 }
@@ -731,6 +872,7 @@ int main(int argc, char *argv[]) {
     bcf_close(fp);
     return 1;
   }
+  std::cerr << "  * Samples: " << n_samples << std::endl;
 
   // Validate that VCF has GT or DS format fields
   bool has_gt = hasFormat(hdr, "GT");
@@ -773,6 +915,16 @@ int main(int argc, char *argv[]) {
     calculateGlobalAndGroupDosages(fp, hdr, globalMinDomDosage,
                                    globalMaxDomDosage, n_samples, chromosomes,
                                    groupMap, groupDosages, hasMissingValues);
+
+    if (scaleGlobally) {
+      std::cerr << "  * Global Min Dosage: " << globalMinDomDosage << std::endl;
+      std::cerr << "  * Global Max Dosage: " << globalMaxDomDosage << std::endl;
+    }
+    if (hasMissingValues) {
+      std::cerr << "  * Warning: Input contains missing values. These are "
+                   "skipped/imputed during calculation."
+                << std::endl;
+    }
   } else {
     // For per-variant scaling or no scaling, just collect chromosomes
     bcf1_t *rec = bcf_init();

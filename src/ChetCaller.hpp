@@ -126,6 +126,16 @@ public:
     long nVariantsKept = 0;
     long nVariantsFiltered = 0;
     long nSitesRemovedInMainPanel = 0;
+    long nVariantsUnphased = 0; // Count of unphased variants in phased mode
+
+    // Samples
+    long nSamples = 0;
+
+    // Mapping Statistics
+    long nGenesInMapping = 0;    // Total genes in mapping file
+    long nVariantsInMapping = 0; // Total variants in mapping file
+    long nGenesWithVariants = 0; // Genes with ≥1 variant in VCF
+    long nMultiGeneVariants = 0; // Variants mapping to >1 gene
 
     // Genotypes
     long long nGenotypesTotal = 0;
@@ -226,6 +236,8 @@ private:
   std::set<std::string> uniqueVariantsKept;
   std::set<std::string> uniqueVariantsDiscarded;
   std::set<std::string> multiGeneVariants;
+  std::map<std::string, int>
+      geneVariantCounts; // For verbose variant distribution
   int invalidFormatVariants;
 
   // Helper methods

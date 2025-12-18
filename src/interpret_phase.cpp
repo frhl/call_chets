@@ -102,7 +102,7 @@ int main(int argc, char *argv[]) {
       showVariants = true;
     else if (arg == "--unphased")
       unphasedMode = true;
-    else if (arg == "--debug")
+    else if (arg == "--verbose" || arg == "-v")
       verbose = true;
     else {
       std::cerr << "Error! Unknown or incomplete argument: " << arg

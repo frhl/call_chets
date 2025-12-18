@@ -51,9 +51,15 @@ The GWAS step (`run_gwas.R`) performs a joint regression: `Y ~ Additive + Domina
 *   **Dominance VCF**: Encodes heterozygote deviation (orthogonalized).
 Significant signals in both terms (especially Dominance) indicate non-additive/recessive effects.
 
+
 ### Dose-Response Estimation
-For each variant, the script calculates the estimated genetic effect $\hat{g}_j$ for dosage levels $d \in \{0, 1, 2\}$ by combining additive and dominance components:
-$$ \hat{g}_j = \hat{\beta}^A_j d + \hat{\beta}^D_j X^D_{j,d} $$
-where $X^D_{j,d}$ is the empirically determined dominance encoding value for genotype $d$. Standard errors are calculated assuming orthogonality:
-$$ \text{SE}(\hat{g}_j) = \sqrt{(d \cdot \text{SE}_{\hat{\beta}^A_j})^2 + (X^D_{j,d} \cdot \text{SE}_{\hat{\beta}^D_j})^2} $$
-The output tables show these estimates and 95% confidence intervals.
+For each variant, the script calculates the estimated genetic effect (G) for dosage levels 0, 1, and 2 by combining the additive and dominance contributions.
+
+The effect for a genome dosage *d* is calculated as:
+`Effect(d) = (Beta_Additive * d) + (Beta_Dominance * X_d)`
+
+Where:
+*   `Beta_Additive` and `Beta_Dominance` are the effect sizes estimated from the GWAS.
+*   `X_d` is the specific dominance encoding value for that dosage level (empirically determined from the data).
+
+Standard errors are calculated by combining the variances of both terms, assuming orthogonality. The output plots visualize these estimates with their 95% confidence intervals, helping to distinguish between Additive (linear) and Recessive (hockey-stick) architectures.

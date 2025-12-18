@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 
 # Set paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TRANSFORM="../bin/transform"
+TRANSFORM="${SCRIPT_DIR}/../bin/orthogonalize"
 
 # Track test results
 TESTS_PASSED=0
@@ -220,10 +220,10 @@ run_test "dominance_mode_all_info" "test_transform_simple.vcf" --mode dominance 
 run_test "dominance_mode_global_scale" "test_transform_simple.vcf" --mode dominance --scale-globally
 
 # Test 7: Dominance mode with group-based scaling
-run_test "dominance_mode_group_scale" "test_transform_simple.vcf" --mode dominance --scale-by-group "test_transform_scale_by_group.txt"
+run_test "dominance_mode_group_scale" "test_transform_simple.vcf" --mode dominance --scale-by-group "${SCRIPT_DIR}/test_transform_scale_by_group.txt"
 
 # Test 8: Dominance mode with group-based scaling and all options
-run_test "dominance_mode_full" "test_transform_simple.vcf" --mode dominance --scale-by-group "test_transform_scale_by_group.txt" --set-variant-id --all-info
+run_test "dominance_mode_full" "test_transform_simple.vcf" --mode dominance --scale-by-group "${SCRIPT_DIR}/test_transform_scale_by_group.txt" --set-variant-id --all-info
 
 print_section "Recessive Mode Tests"
 
