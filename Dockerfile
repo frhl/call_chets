@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y \
     git
 
 # Clone htslib
+WORKDIR /usr/src
 RUN git clone --recurse-submodules https://github.com/samtools/htslib.git
 
 # Install htslib
