@@ -8,3 +8,10 @@ testhat/
 .claude.md
 claude.md
 bin/
+
+# Examples generated data
+examples/output/
+examples/*.vcf.gz
+examples/gene_map.txt
+examples/phenotypes.txt
+examples/samples.txt

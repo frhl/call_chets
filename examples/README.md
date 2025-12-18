@@ -1,44 +1,59 @@
 # Practical Examples
 
-This directory contains scripts to generate synthetic data and run the `call_chets` pipeline in both phased and unphased modes. It also includes an R script to verify the orthogonality of the dominance encoding.
+This directory contains workflows demonstrating the usage of `call_chets` and related tools.
 
-## 1. Generate Data
-Run the generation script to create synthetic VCFs (`phased.vcf.gz`, `unphased.vcf.gz`), a gene map, and simulated phenotypes.
+## Folder Structure
+
+*   `input/`: Contains generated synthetic data (VCFs, Gene Map, Phenotypes).
+*   `output/`: Contains results from the workflows.
+    *   `phased_gene/`: Results from the Phased Gene Workflow.
+    *   `unphased_gene/`: Results from the Unphased Gene Workflow.
+    *   `variant_level/`: Results from the Variant Level Workflow.
+
+## 0. Generate Data
+Generates synthetic VCFs (`phased.vcf.gz`, `unphased.vcf.gz`) and phenotypes (`Y_rec`, `Y_add`, `Y_null`) in `examples/input/`.
 ```bash
 ./00_generate_data.sh
 ```
-*Requires `python3`.*
 
-## 2. Phased Analysis Workflow
-Demonstrates the standard pipeline:
-1. Extract genotypes (simulated `bcftools query`).
-2. Run `interpret_phase` to call compound heterozygotes.
-3. specific `make_pseudo_vcf` to create `dominance` (orthogonal non-additive) and `additive` VCFs.
+## 1. Phased Gene Workflow
+Standard pipeline for phased data. Calls compound heterozygotes and aggregates variants by gene.
+1.  Extract genotypes.
+2.  Run `interpret_phase` (call_chets).
+3.  Create pseudo-variant VCFs (Additive & Dominance).
+4.  Run GWAS on pseudo-variants (Genes).
 ```bash
-./01_phased_workflow.sh
+./01_phased_gene_workflow.sh
 ```
 
-## 3. Unphased Analysis Workflow
-Demonstrates the unphased pipeline (burden/gene-level counts):
-1. Extract genotypes.
-2. Run `interpret_phase --unphased`.
-3. Create VCF.
+## 2. Unphased Gene Workflow (Collapsing)
+Pipeline for unphased data (burden/collapsing).
+1.  Extract genotypes.
+2.  Run `interpret_phase --unphased`.
+3.  Create pseudo-variant VCFs.
+4.  Run GWAS on pseudo-variants (Genes).
 ```bash
-./02_unphased_workflow.sh
+./02_unphased_gene_workflow.sh
 ```
 
-## 4. GWAS & Orthogonality Check (R)
-Analyzes the output from the Phased workflow.
-- Loads the simulated phenotypes (recessive trait).
-- Loads the `additive` and `dominance` VCFs.
-- Checks correlation (should be ~0 aka orthogonal).
-- Runs a linear regression to show how the dominance term captures the recessive signal.
+## 3. Variant Level Workflow
+Pipeline for analyzing individual variants directly using the `orthogonalize` tool.
+1.  Prepare Additive VCF (standard).
+2.  Create Dominance VCF using `orthogonalize --scale-per-variant`.
+3.  Run GWAS on individual variants.
 ```bash
-Rscript 03_run_gwas.R
+./03_variant_workflow.sh
 ```
-*Requires `data.table` package in R.*
 
-## Expected Results
-Input data simulates a recessive effect (risk only when 2 alleles are present).
-- **Correlation**: The additive and dominance encodings should have 0 correlation.
-- **Regression**: Both Additive and Dominance terms should be significant. The Dominance term captures the deviation of the heterozygotes from the additive expectation, which is the hallmark of a recessive effect.
+## Analysis details
+The GWAS step (`run_gwas.R`) performs a joint regression: `Y ~ Additive + Dominance`.
+*   **Additive VCF**: Standard allele counts (0, 1, 2).
+*   **Dominance VCF**: Encodes heterozygote deviation (orthogonalized).
+Significant signals in both terms (especially Dominance) indicate non-additive/recessive effects.
+
+### Dose-Response Estimation
+For each variant, the script calculates the estimated genetic effect $\hat{g}_j$ for dosage levels $d \in \{0, 1, 2\}$ by combining additive and dominance components:
+$$ \hat{g}_j = \hat{\beta}^A_j d + \hat{\beta}^D_j X^D_{j,d} $$
+where $X^D_{j,d}$ is the empirically determined dominance encoding value for genotype $d$. Standard errors are calculated assuming orthogonality:
+$$ \text{SE}(\hat{g}_j) = \sqrt{(d \cdot \text{SE}_{\hat{\beta}^A_j})^2 + (X^D_{j,d} \cdot \text{SE}_{\hat{\beta}^D_j})^2} $$
+The output tables show these estimates and 95% confidence intervals.

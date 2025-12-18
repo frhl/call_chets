@@ -17,7 +17,8 @@ def write_vcf(filename, samples, variants, phased=True):
                 sep = "|" if phased else "/"
                 gt_strs.append(f"{a}{sep}{b}")
             
-            f.write(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\tPASS\t.\tGT\t" + "\t".join(gt_strs) + "\n")
+            var_id = f"{chrom}:{pos}:{ref}:{alt}"
+            f.write(f"{chrom}\t{pos}\t{var_id}\t{ref}\t{alt}\t.\tPASS\t.\tGT\t" + "\t".join(gt_strs) + "\n")
 
 def simulate_data():
     random.seed(42)
@@ -41,11 +42,11 @@ def simulate_data():
     
     for i in range(n_samples):
         # Var 1
-        g1 = sorted([1 if random.random() < 0.3 else 0, 1 if random.random() < 0.3 else 0])
+        g1 = [1 if random.random() < 0.3 else 0, 1 if random.random() < 0.3 else 0]
         genos1.append(tuple(g1))
         
         # Var 2
-        g2 = sorted([1 if random.random() < 0.1 else 0, 1 if random.random() < 0.1 else 0])
+        g2 = [1 if random.random() < 0.1 else 0, 1 if random.random() < 0.1 else 0]
         genos2.append(tuple(g2))
         
         # Total alt count (Gene Burden)
@@ -56,30 +57,38 @@ def simulate_data():
     variants.append(("1", 200, "G", "C", genos2))
     
     # Write Phased VCF
-    write_vcf("examples/phased.vcf.gz", samples, variants, phased=True)
+    write_vcf("examples/input/phased.vcf.gz", samples, variants, phased=True)
     
     # Write Unphased VCF
-    write_vcf("examples/unphased.vcf.gz", samples, variants, phased=False)
+    write_vcf("examples/input/unphased.vcf.gz", samples, variants, phased=False)
     
     # Write Gene Map
-    with open("examples/gene_map.txt", "w") as f:
+    with open("examples/input/gene_map.txt", "w") as f:
         f.write("variant\tgene\n")
         for var, gene in gene_map:
             f.write(f"{var}\t{gene}\n")
             
-    # Simulate Phenotype - Carrier Recessive Effect
-    # Y = 1 if user has >= 2 alleles (homozygous or CH), else 0
-    # Additive effect 0.
-    with open("examples/phenotypes.txt", "w") as f:
-        f.write("IID\tY\n")
+    # Simulate Phenotypes
+    # 1. Y_rec: Carrier Recessive Effect (Risk when >= 2 alleles) -> Expect Additive + Dominance signal
+    # 2. Y_add: Pure Additive Effect -> Expect Additive signal, Null Dominance
+    # 3. Y_null: No Effect -> Expect Null Additive, Null Dominance
+    
+    with open("examples/input/phenotypes.txt", "w") as f:
+        f.write("IID\tY_rec\tY_add\tY_null\n")
         for i, s in enumerate(samples):
-            # Recessive trait: specific effect only when >= 2 copies
+            # 1. Recessive
             is_recessive_state = 1 if sample_genotypes[i] >= 2 else 0
+            y_rec = 2.0 * is_recessive_state + random.gauss(0, 1.0)
             
-            # Use a simpler continuous phenotype for regression
-            # Mean shift for recessive state
-            y = 2.0 * is_recessive_state + random.gauss(0, 1.0)
-            f.write(f"{s}\t{y:.4f}\n")
+            # 2. Additive (linear effect of allele count)
+            # genotype is 0, 1, 2, 3, 4 (since 2 variants)
+            # Let's say effect size is 0.5 per allele
+            y_add = 0.5 * sample_genotypes[i] + random.gauss(0, 1.0)
+            
+            # 3. Null
+            y_null = random.gauss(0, 1.0)
+            
+            f.write(f"{s}\t{y_rec:.4f}\t{y_add:.4f}\t{y_null:.4f}\n")
 
 if __name__ == "__main__":
     simulate_data()
