@@ -21,10 +21,20 @@ jobs:
     - name: Build project
       run: make
 
-    - name: Run tests
+    - name: Run call_chets tests
       run: |
         cd tests
         ./run_tests.sh
+
+    - name: Run recode/transform tests
+      run: |
+        cd tests
+        ./run_transform_tests.sh
+
+    - name: Run variant counting tests
+      run: |
+        cd tests
+        ./test_variant_counting.sh
 
     - name: Upload test artifacts on failure
       if: failure()

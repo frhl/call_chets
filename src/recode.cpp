@@ -313,8 +313,8 @@ void calculateGlobalAndGroupDosages(
   long roundedDosageCount = 0; // Local counter for this pass
   long processedVariants = 0;
 
-  bool has_gt = hasFormat(hdr, "GT");
-  bool has_ds = hasFormat(hdr, "DS");
+  bool has_gt_format = hasFormat(hdr, "GT");
+  bool has_ds_format = hasFormat(hdr, "DS");
 
   auto pass1_start_time = std::chrono::steady_clock::now();
 
@@ -331,9 +331,13 @@ void calculateGlobalAndGroupDosages(
     chromosomes.insert(bcf_hdr_id2name(hdr, rec->rid));
     bcf_unpack(rec, BCF_UN_STR);
 
-    int ngt = has_gt ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
+    int ngt = has_gt_format ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
     int nds =
-        has_ds ? bcf_get_format_float(hdr, rec, "DS", &ds_arr, &nds_arr) : 0;
+        has_ds_format ? bcf_get_format_float(hdr, rec, "DS", &ds_arr, &nds_arr) : 0;
+
+    // Per-variant flags for successful retrieval
+    bool has_gt = has_gt_format && ngt >= 0;
+    bool has_ds = has_ds_format && nds >= 0;
 
     int aa_count = 0, Aa_count = 0, AA_count = 0, non_missing_count = 0;
 
@@ -476,8 +480,8 @@ void processVcfFile(
   bool previewPrinted = false;
   const int MAX_EXAMPLES = 5;
 
-  bool has_gt = hasFormat(hdr, "GT");
-  bool has_ds = hasFormat(hdr, "DS");
+  bool has_gt_format = hasFormat(hdr, "GT");
+  bool has_ds_format = hasFormat(hdr, "DS");
 
   // Track processing time (pass2_start is already defined in main)
   auto processing_start_time = std::chrono::steady_clock::now();
@@ -489,9 +493,13 @@ void processVcfFile(
     // Collect chromosome names as we process
     chromosomes.insert(bcf_hdr_id2name(hdr, rec->rid));
 
-    int ngt = has_gt ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
+    int ngt = has_gt_format ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
     int nds =
-        has_ds ? bcf_get_format_float(hdr, rec, "DS", &ds_arr, &nds_arr) : 0;
+        has_ds_format ? bcf_get_format_float(hdr, rec, "DS", &ds_arr, &nds_arr) : 0;
+
+    // Per-variant flags for successful retrieval
+    bool has_gt = has_gt_format && ngt >= 0;
+    bool has_ds = has_ds_format && nds >= 0;
 
     if (!has_gt && !has_ds)
       continue;
@@ -507,12 +515,6 @@ void processVcfFile(
                 << "s elapsed, ~" << rate << " var/sec, "
                 << discarded << " discarded)" << std::flush;
     }
-
-    // Ensure successful retrieval
-    if (ngt < 0)
-      has_gt = false;
-    if (nds < 0)
-      has_ds = false;
 
     int aa_count = 0, Aa_count = 0, AA_count = 0, non_missing_count = 0;
     for (int i = 0; i < n_samples; ++i) {
