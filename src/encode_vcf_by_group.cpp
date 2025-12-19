@@ -333,8 +333,8 @@ int main(int argc, char *argv[]) {
                "heterozygous pseudo Count\">\n";
   std::cout << "##INFO=<ID=HOM,Number=1,Type=Integer,Description=\"Homozygous "
                "Count\">\n";
-  std::cout << "##INFO=<ID=HET,Number=1,Type=Integer,Description="
-               "\"Heterozygous Count\">\n";
+  std::cout << "##INFO=<ID=HET,Number=1,Type=Integer,Description=\""
+               "Heterozygous Count\">\n";
   std::cout << "##INFO=<ID=CIS,Number=1,Type=Integer,Description=\"Cis pseudo "
                "Count \">\n";
   if (mode == "dominance") {
