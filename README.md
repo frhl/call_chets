@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/frhl/call_chets/actions/workflows/tests.yml/badge.svg)](https://github.com/frhl/call_chets/actions/workflows/tests.yml)
 [![Docker](https://github.com/frhl/call_chets/actions/workflows/docker-image.yml/badge.svg)](https://github.com/frhl/call_chets/actions/workflows/docker-image.yml)
-[![Docker Hub](https://img.shields.io/docker/pulls/frhl/call_chets.svg)](https://hub.docker.com/r/frhl/call_chets)
+[![Docker Hub](https://img.shields.io/docker/pulls/frhl/call_chets.svg)](https://hub.docker.com/r/fhlassen/call_chets)
 
 Efficient C++ tools for detecting biallelic (compound heterozygous or homozygous) variants and/or recoding them to either recessive or nonadditive genotypes.
 
