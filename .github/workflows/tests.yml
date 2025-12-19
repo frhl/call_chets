@@ -1,0 +1,35 @@
+name: Tests
+
+on:
+  push:
+    branches: [ "main", "dev", "develop" ]
+  pull_request:
+    branches: [ "main", "dev", "develop" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential zlib1g-dev libhts-dev
+
+    - name: Build project
+      run: make
+
+    - name: Run tests
+      run: |
+        cd tests
+        ./run_tests.sh
+
+    - name: Upload test artifacts on failure
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-outputs
+        path: tests/output_*.txt
+        retention-days: 7
