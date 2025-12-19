@@ -46,7 +46,7 @@ inline void printHeader(const std::string &toolName,
       std::string padding(14 - pair.first.length(), ' ');
       std::cerr << padding << ": " << pair.second << std::endl;
     }
-    std::cerr << std::endl;
+    // Don't add blank line here - let caller control it
   }
 }
 

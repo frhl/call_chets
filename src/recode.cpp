@@ -209,9 +209,9 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
 
   std::map<std::string, std::string> params;
   params["Mode"] = mode;
-  params["Scale Factor"] = std::to_string(scalingFactor);
   params["Scale Variant"] = scalePerVariant ? "Yes" : "No";
   params["Scale Global"] = scaleGlobally ? "Yes" : "No";
+  params["Scale Factor"] = std::to_string(scalingFactor);
   params["All Info"] = allInfo ? "Yes" : "No";
 
   call_chets::printHeader("RECODE",
@@ -316,10 +316,17 @@ void calculateGlobalAndGroupDosages(
   bool has_gt = hasFormat(hdr, "GT");
   bool has_ds = hasFormat(hdr, "DS");
 
+  auto pass1_start_time = std::chrono::steady_clock::now();
+
   while (bcf_read(fp, hdr, rec) == 0) {
     processedVariants++;
-    if (processedVariants % 5000 == 0) {
-      std::cerr << "\r[Pass 1: Parsing variants] Processed: " << processedVariants << std::flush;
+    if (processedVariants % 10000 == 0) {
+      auto now = std::chrono::steady_clock::now();
+      auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - pass1_start_time);
+      int rate = elapsed.count() > 0 ? processedVariants / elapsed.count() : 0;
+      std::cerr << "\r    [Pass 1] " << processedVariants
+                << " variants processed (" << elapsed.count()
+                << "s elapsed, ~" << rate << " var/sec)" << std::flush;
     }
     chromosomes.insert(bcf_hdr_id2name(hdr, rec->rid));
     bcf_unpack(rec, BCF_UN_STR);
@@ -472,6 +479,9 @@ void processVcfFile(
   bool has_gt = hasFormat(hdr, "GT");
   bool has_ds = hasFormat(hdr, "DS");
 
+  // Track processing time (pass2_start is already defined in main)
+  auto processing_start_time = std::chrono::steady_clock::now();
+
   while (bcf_read(fp, hdr, rec) == 0) {
     totalVariants++;
     bcf_unpack(rec, BCF_UN_STR);
@@ -486,12 +496,16 @@ void processVcfFile(
     if (!has_gt && !has_ds)
       continue;
 
-    // Progress logging every 5000 variants
-    if (totalVariants % 5000 == 0) {
-      std::cerr << "\r[Writing variants] Processed: " << totalVariants
-                << " | Written: " << keptVariants << " | Discarded: "
-                << (discardedVariantsCount + countVariantsWithoutHomAlt)
-                << std::flush;
+    // Progress logging every 10000 variants
+    if (keptVariants > 0 && keptVariants % 10000 == 0) {
+      auto now = std::chrono::steady_clock::now();
+      auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - processing_start_time);
+      int rate = elapsed.count() > 0 ? keptVariants / elapsed.count() : 0;
+      int discarded = discardedVariantsCount + countVariantsWithoutHomAlt;
+      std::cerr << "\r    [Processing] " << keptVariants
+                << " variants written (" << elapsed.count()
+                << "s elapsed, ~" << rate << " var/sec, "
+                << discarded << " discarded)" << std::flush;
     }
 
     // Ensure successful retrieval
@@ -966,16 +980,27 @@ int main(int argc, char *argv[]) {
     bcf_close(fp);
     return 1;
   }
-  std::cerr << "  * Samples: " << n_samples << std::endl;
 
-  std::cerr << "  * Encoding Info : ";
+  // Calculate number of passes needed
+  bool needTwoPass = scaleGlobally || !scaleByGroupPath.empty();
+  int numPasses = needTwoPass ? 2 : 1;
+
+  // Print recoding transformation (append to Parameters section)
+  std::cerr << "  * Recoding       : ";
   if (mode == "recessive") {
-    double v2 = 2.0 * scalingFactor;
-    std::cerr << "Recoding [0, 1, 2] -> [0, 0, " << v2 << "]" << std::endl;
+    double scaledValue = 2.0 * scalingFactor;
+    // Format the scaled value nicely
+    if (scaledValue == static_cast<int>(scaledValue)) {
+      std::cerr << "[0, 1, 2] -> [0, 0, " << static_cast<int>(scaledValue) << "]" << std::endl;
+    } else {
+      std::cerr << "[0, 1, 2] -> [0, 0, " << scaledValue << "]" << std::endl;
+    }
   } else if (mode == "dominance") {
-    std::cerr << "Recoding [0, 1, 2] -> " << scalingFactor
-              << " * [-h*a, 2*a*r, -h*r] (dominance deviation)" << std::endl;
+    std::cerr << "[0, 1, 2] -> [-h*a, 2*a*r, -h*r]" << std::endl;
   }
+  std::cerr << "  * Number of passes: " << numPasses << std::endl;
+  std::cerr << "  * Number of samples: " << n_samples << std::endl;
+  std::cerr << std::endl;  // Blank line after Parameters section
 
   // Validate that VCF has GT or DS format fields
   bool has_gt = hasFormat(hdr, "GT");
@@ -1012,9 +1037,6 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // Only do first pass if we need global or group-based scaling
-  bool needTwoPass = scaleGlobally || !scaleByGroupPath.empty();
-
   if (needTwoPass) {
     std::cerr << "  * Parsing specified genomic regions (Pass 1/2)..."
               << std::endl;
@@ -1046,9 +1068,6 @@ int main(int argc, char *argv[]) {
       bcf_close(fp);
       return 1;
     }
-  } else {
-    std::cerr << "  * Single-pass mode: chromosomes will be collected during processing"
-              << std::endl;
   }
 
   // For dominance mode with global/group scaling, validate we found
@@ -1084,14 +1103,14 @@ int main(int argc, char *argv[]) {
     printHeader(hdr, sortedContigs, mode, globalMinDomDosage, globalMaxDomDosage,
                 allInfo, scalePerVariant, scaleGlobally, scaleByGroup);
 
-    std::cerr << "  * Writing variants (Pass 2/2)..." << std::endl;
+    std::cerr << "Processing variants (two passes)..." << std::endl;
   } else {
     // Single pass mode - print header without contigs (we'll collect them during processing)
     std::vector<std::string> emptyContigs;
     printHeader(hdr, emptyContigs, mode, globalMinDomDosage, globalMaxDomDosage,
                 allInfo, scalePerVariant, scaleGlobally, scaleByGroup);
 
-    std::cerr << "  * Processing variants (single pass)..." << std::endl;
+    std::cerr << "Processing variants (single pass)..." << std::endl;
   }
 
   auto pass2_start = std::chrono::steady_clock::now();
