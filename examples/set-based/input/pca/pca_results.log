@@ -1,0 +1,29 @@
+PLINK v2.00a2.3LM 64-bit Intel (24 Jan 2020)
+Options in effect:
+  --allow-extra-chr
+  --bfile simulated
+  --extract pca/ld_pruned.prune.in
+  --out pca/pca_results
+  --pca 10
+
+Hostname: 8f158c2eae54
+Working directory: /data
+Start time: Sat Jan  3 12:01:31 2026
+
+Random number seed: 1767441691
+15973 MiB RAM detected; reserving 7986 MiB for main workspace.
+Using up to 6 compute threads.
+5000 samples (0 females, 0 males, 5000 ambiguous; 5000 founders) loaded from
+simulated.fam.
+7197 variants loaded from simulated.bim.
+Note: No phenotype data present.
+--extract: 4653 variants remaining.
+Calculating allele frequencies... done.
+4653 variants remaining after main filters.
+Constructing GRM: done.
+Correcting for missingness... done.
+Extracting eigenvalues and eigenvectors... done.
+--pca: Eigenvectors written to pca/pca_results.eigenvec , and eigenvalues
+written to pca/pca_results.eigenval .
+
+End time: Sat Jan  3 12:01:38 2026

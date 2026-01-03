@@ -1,0 +1,23 @@
+PLINK v2.00a2.3LM 64-bit Intel (24 Jan 2020)
+Options in effect:
+  --allow-extra-chr
+  --bfile simulated
+  --indep-pairwise 50 5 0.2
+  --out pca/ld_pruned
+
+Hostname: fe984579fd92
+Working directory: /data
+Start time: Sat Jan  3 12:01:31 2026
+
+Random number seed: 1767441691
+15973 MiB RAM detected; reserving 7986 MiB for main workspace.
+Using up to 6 compute threads.
+5000 samples (0 females, 0 males, 5000 ambiguous; 5000 founders) loaded from
+simulated.fam.
+7197 variants loaded from simulated.bim.
+Note: No phenotype data present.
+Calculating allele frequencies... done.
+--indep-pairwise (1 compute thread): 2544/7197 variants removed.
+Variant lists written to pca/ld_pruned.prune.in and pca/ld_pruned.prune.out .
+
+End time: Sat Jan  3 12:01:31 2026
