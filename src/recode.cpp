@@ -113,7 +113,7 @@ void printUsage(const char *path) {
                "(default: 1.0)\n";
   std::cerr << "                             Can be combined with any scaling "
                "option above\n";
-  std::cerr << "\nAdditional Options:\n";
+  std::cerr << "\n  --min-hom-count <n>        Minimum number of homozygous alternate alleles\n                             required (default: 1)\n\nAdditional Options:\n";
   std::cerr << "  --set-variant-id           Set variant IDs to "
                "chr:pos:ref:alt format\n";
   std::cerr << "  --all-info                 Include additional info in output "
@@ -166,7 +166,7 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
                     std::string &mode, double &scalingFactor,
                     bool &scalePerVariant, bool &scaleGlobally,
                     bool &setVariantId, bool &allInfo,
-                    std::string &scaleByGroupPath) {
+                    std::string &scaleByGroupPath, int &minHomCount) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "--help" || arg == "-h") {
@@ -176,6 +176,8 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
       pathInput = argv[++i];
     } else if ((arg == "--mode" || arg == "-m") && i + 1 < argc) {
       mode = argv[++i];
+    } else if (arg == "--min-hom-count" && i + 1 < argc) {
+      minHomCount = std::stoi(argv[++i]);
     } else if (arg == "--scale-factor" && i + 1 < argc) {
       scalingFactor = std::stod(argv[++i]);
     } else if (arg == "--scale-per-variant") {
@@ -209,6 +211,7 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
 
   std::map<std::string, std::string> params;
   params["Mode"] = mode;
+  params["Min Hom Count"] = std::to_string(minHomCount);
   params["Scale Variant"] = scalePerVariant ? "Yes" : "No";
   params["Scale Global"] = scaleGlobally ? "Yes" : "No";
   params["Scale Factor"] = std::to_string(scalingFactor);
@@ -456,7 +459,7 @@ void processVcfFile(
     bool setVariantId, double scalingFactor,
     const std::map<std::string, std::string> &groupMap,
     const std::map<std::string, std::pair<double, double>> &groupDosages,
-    std::set<std::string> &chromosomes) {
+    std::set<std::string> &chromosomes, int minHomCount) {
   bcf1_t *rec = bcf_init();
   int *gt_arr = NULL, ngt_arr = 0;
   float *ds_arr = NULL;
@@ -526,16 +529,15 @@ void processVcfFile(
                              roundedDosageCount);
     }
 
-    // For dominance mode, we need at least one homozygous alternate
-    if ((mode == "dominance" && AA_count == 0) ||
+    // For dominance mode, we need at least minHomCount homozygous alternates
+    if ((mode == "dominance" && AA_count < minHomCount) ||
         (mode != "dominance" && mode != "recessive")) {
-      if (mode == "dominance" && AA_count == 0) {
+      if (mode == "dominance" && AA_count < minHomCount) {
         countVariantsWithoutHomAlt++;
         if (countVariantsWithoutHomAlt <= limit) {
           std::cerr << "variant '" << bcf_hdr_id2name(hdr, rec->rid) << ":"
-                    << (rec->pos + 1) << ":" << rec->d.allele[0] << ":"
                     << (rec->n_allele > 1 ? rec->d.allele[1] : ".")
-                    << "' has no homozygous alternate alleles. Skipping..\n";
+                    << "' has " << AA_count << " homozygous alternate alleles (min required: " << minHomCount << "). Skipping..\n";
         }
       }
       continue;
@@ -944,10 +946,11 @@ int main(int argc, char *argv[]) {
   bool setVariantId = false;
   bool allInfo = false;
   std::string scaleByGroupPath;
+  int minHomCount = 1;
 
   if (!parseArguments(argc, argv, pathInput, mode, scalingFactor,
                       scalePerVariant, scaleGlobally, setVariantId, allInfo,
-                      scaleByGroupPath)) {
+                      scaleByGroupPath, minHomCount)) {
     return 1;
   }
 
@@ -956,6 +959,12 @@ int main(int argc, char *argv[]) {
     std::cerr << "Error: Invalid mode '" << mode
               << "'. Only 'dominance' or 'recessive' modes are supported."
               << std::endl;
+    return 1;
+  }
+
+  // Validate minHomCount for dominance mode
+  if (mode == "dominance" && minHomCount < 1) {
+    std::cerr << "Error: --min-hom-count must be at least 1 when using dominance mode." << std::endl;
     return 1;
   }
 
@@ -1119,7 +1128,7 @@ int main(int argc, char *argv[]) {
 
   processVcfFile(fp, hdr, mode, globalMinDomDosage, globalMaxDomDosage, allInfo,
                  scalePerVariant, scaleGlobally, scaleByGroup, setVariantId,
-                 scalingFactor, groupMap, groupDosages, chromosomes);
+                 scalingFactor, groupMap, groupDosages, chromosomes, minHomCount);
 
   auto pass2_end = std::chrono::steady_clock::now();
   auto pass2_duration = std::chrono::duration_cast<std::chrono::seconds>(pass2_end - pass2_start);

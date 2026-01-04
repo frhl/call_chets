@@ -1,0 +1,7 @@
+##fileformat=VCFv4.2
+##EncodingMode=dominance
+##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes">
+##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
+##FORMAT=<ID=DS,Number=1,Type=Float,Description="Dosage of the alternate allele based on dominance model">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2	S3	S4
+chr1	300	chr1:300:A:T	A	T	.	.	AC=5;AN=8	DS	-0.0625	-0.0625	0.25	-0.125
