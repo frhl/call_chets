@@ -4,14 +4,14 @@
 set -euo pipefail
 
 # Config
-MIN_HOM_COUNT=1  # Min homozygous alternate alleles required per variant
+MIN_HOM_COUNT=5  # Min homozygous alternate alleles required per variant
 
 # Paths
 INPUT="input/simulated.vcf.gz"
 OUTPUT="input/simulated.nonadditive.vcf.gz"
 
 # Encode using Docker
-docker run --rm -v "$(pwd):/data" fhlassen/call_chets:1.0.4 \
+docker run --rm -v "$(pwd):/data" fhlassen/call_chets:latest \
     ./bin/recode \
         --input "/data/${INPUT}" \
         --mode nonadditive \

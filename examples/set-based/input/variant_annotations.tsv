@@ -4486,7 +4486,7 @@ var_4483	22790162	0.0922	gene_22	synonymous	False
 var_4484	22790261	0.0291	gene_22	synonymous	False
 var_4485	22790319	0.0005	gene_22	synonymous	False
 var_4486	22790335	0.0054	gene_22	synonymous	False
-var_4487	22790363	0.0279	gene_22	synonymous	False
+var_4487	22790363	0.0279	gene_22	pLoF	True
 var_4488	22790419	0.0201	gene_22	synonymous	False
 var_4489	22790448	0.4496	gene_22	synonymous	False
 var_4490	22790479	0.0022	gene_22	synonymous	False
@@ -7873,7 +7873,7 @@ var_7870	40390119	0.0017	gene_39	synonymous	False
 var_7871	40390129	0.0009	gene_39	synonymous	False
 var_7872	40390277	0.0426	gene_39	synonymous	False
 var_7873	40390381	0.0055	gene_39	synonymous	False
-var_7874	40391013	0.0269	gene_39	synonymous	False
+var_7874	40391013	0.0269	gene_39	pLoF	True
 var_7875	40391209	0.0001	gene_39	synonymous	False
 var_7876	40391292	0.0001	gene_39	synonymous	False
 var_7877	40391466	0.059699999999999975	gene_39	synonymous	False

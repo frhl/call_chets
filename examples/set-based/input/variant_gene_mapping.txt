@@ -4485,7 +4485,7 @@ var_4483	gene_22	synonymous
 var_4484	gene_22	synonymous
 var_4485	gene_22	synonymous
 var_4486	gene_22	synonymous
-var_4487	gene_22	synonymous
+var_4487	gene_22	pLoF
 var_4488	gene_22	synonymous
 var_4489	gene_22	synonymous
 var_4490	gene_22	synonymous
@@ -7872,7 +7872,7 @@ var_7870	gene_39	synonymous
 var_7871	gene_39	synonymous
 var_7872	gene_39	synonymous
 var_7873	gene_39	synonymous
-var_7874	gene_39	synonymous
+var_7874	gene_39	pLoF
 var_7875	gene_39	synonymous
 var_7876	gene_39	synonymous
 var_7877	gene_39	synonymous
