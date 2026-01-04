@@ -1,0 +1,2 @@
+variant gene
+chr1:100:A:T GeneA

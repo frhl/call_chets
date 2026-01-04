@@ -1,0 +1,2 @@
+variant	group
+chr1:1000:A:T	GENE1

@@ -1,0 +1,3 @@
+variant	gene
+1:100:A:T	GeneA
+1:200:G:C	GeneA

@@ -1,0 +1,26 @@
+PLINK v2.00a2.3LM 64-bit Intel (24 Jan 2020)
+Options in effect:
+  --allow-extra-chr
+  --bfile simulated
+  --extract simulated.vr_markers.list
+  --make-bed
+  --out simulated_vr
+
+Hostname: 0c14c5535bbf
+Working directory: /data
+Start time: Sat Jan  3 22:04:45 2026
+
+Random number seed: 1767477885
+15973 MiB RAM detected; reserving 7986 MiB for main workspace.
+Using up to 6 compute threads.
+5000 samples (0 females, 0 males, 5000 ambiguous; 5000 founders) loaded from
+simulated.fam.
+7197 variants loaded from simulated.bim.
+Note: No phenotype data present.
+--extract: 1625 variants remaining.
+1625 variants remaining after main filters.
+Writing simulated_vr.fam ... done.
+Writing simulated_vr.bim ... done.
+Writing simulated_vr.bed ... done.
+
+End time: Sat Jan  3 22:04:45 2026
