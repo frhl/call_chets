@@ -11,7 +11,7 @@ NC='\033[0m' # No Color
 
 # Set paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENCODE_VCF="../bin/encode_vcf"
+ENCODE_VCF="${SCRIPT_DIR}/../bin/encode_vcf"
 DATA_FILE="${SCRIPT_DIR}/data_encode.txt"
 SAMPLES_FILE="${SCRIPT_DIR}/samples_encode.txt"
 DATA_FILE_GZ="${DATA_FILE}.gz"
@@ -29,7 +29,7 @@ trap cleanup EXIT
 # Setup test data
 setup_data() {
     # Create samples file
-    printf "Sample1\nSample2\nSample3\n" > "${SAMPLES_FILE}"
+    printf "Sample1\nSample2\nSample3\nSample4\n" > "${SAMPLES_FILE}"
 
     # Create call_chets output format
     # Columns: Sample Chromosome Gene Configuration Dosage VariantInfo

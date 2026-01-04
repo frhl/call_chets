@@ -113,11 +113,13 @@ void printUsage(const char *path) {
                "(default: 1.0)\n";
   std::cerr << "                             Can be combined with any scaling "
                "option above\n";
-  std::cerr << "\n  --min-hom-count <n>        Minimum number of minor homozygous "
-               "alleles required\n                             (default: 1). "
-               "Applies to min(AA,aa) in dominance mode\n";
+  std::cerr
+      << "\n  --min-hom-count <n>        Minimum number of minor homozygous "
+         "alleles required\n                             (default: 1). "
+         "Applies to min(AA,aa) in dominance mode\n";
   std::cerr << "  --min-het-count <n>        Minimum number of heterozygous "
-               "alleles required\n                             (default: 1)\n\nAdditional Options:\n";
+               "alleles required\n                             (default: "
+               "1)\n\nAdditional Options:\n";
   std::cerr << "  --set-variant-id           Set variant IDs to "
                "chr:pos:ref:alt format\n";
   std::cerr << "  --all-info                 Include additional info in output "
@@ -479,6 +481,7 @@ void processVcfFile(
   int nds_arr = 0;
   int n_samples = bcf_hdr_nsamples(hdr);
   const double epsilon = 1e-8;
+  int countVariantsWithoutHomRef = 0;
   int countVariantsWithoutHomAlt = 0;
   int countVariantsWithoutHet = 0;
   const int limit = 5;
@@ -529,8 +532,8 @@ void processVcfFile(
       auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
           now - processing_start_time);
       int rate = elapsed.count() > 0 ? keptVariants / elapsed.count() : 0;
-      int discarded = discardedVariantsCount + countVariantsWithoutHomAlt +
-                      countVariantsWithoutHet;
+      int discarded = discardedVariantsCount + countVariantsWithoutHomRef +
+                      countVariantsWithoutHomAlt + countVariantsWithoutHet;
       std::cerr << "\r    [Processing] " << keptVariants
                 << " variants written (" << elapsed.count() << "s elapsed, ~"
                 << rate << " var/sec, " << discarded << " discarded)"
@@ -548,22 +551,44 @@ void processVcfFile(
     }
 
     // For dominance mode, we need at least minHomCount homozygous alternates
-    // (minor allele) and minHetCount heterozygotes
-    int minorHomCount = std::min(aa_count, AA_count);
-    if ((mode == "dominance" && minorHomCount < minHomCount) ||
-        (mode != "dominance" && mode != "recessive")) {
-      if (mode == "dominance" && minorHomCount < minHomCount) {
-        countVariantsWithoutHomAlt++;
-        if (countVariantsWithoutHomAlt <= limit) {
-          std::string varId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
-                              std::to_string(rec->pos + 1) + ":" +
-                              rec->d.allele[0] + ":" +
-                              (rec->n_allele > 1 ? rec->d.allele[1] : ".");
-          std::cerr << "variant '" << varId << "' has "
-                    << AA_count << " (AA) and " << aa_count
-                    << " (aa) homozygous alleles (min required: " << minHomCount
-                    << " for minor hom). Skipping..\n";
-        }
+    // (minor allele) and minHetCount heterozygotes.
+    // Also check homozygous reference count if we are being strict about
+    // "minor" homozygous. Actually, the original logic was: min(aa, AA) <
+    // minHomCount. This implies we need BOTH aa and AA to be >= minHomCount?
+    // "minor homozygous alleles required... Applies to min(AA,aa)"
+    // So if aa < minHomCount -> fail. If AA < minHomCount -> fail. (Assuming
+    // dominance mode).
+
+    // Check if aa count is sufficient
+    if (mode == "dominance" && aa_count < minHomCount) {
+      countVariantsWithoutHomRef++;
+      if (countVariantsWithoutHomRef <= limit) {
+        std::string varId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
+                            std::to_string(rec->pos + 1) + ":" +
+                            rec->d.allele[0] + ":" +
+                            (rec->n_allele > 1 ? rec->d.allele[1] : ".");
+        std::cerr << "variant '" << varId << "' has " << aa_count
+                  << " (aa) homozygous alleles (min required: " << minHomCount
+                  << " for minor hom). Skipping..\n";
+      } else if (countVariantsWithoutHomRef == limit + 1) {
+        std::cerr << "      (truncated...)" << std::endl;
+      }
+      continue;
+    }
+
+    // Check if AA count is sufficient
+    if (mode == "dominance" && AA_count < minHomCount) {
+      countVariantsWithoutHomAlt++;
+      if (countVariantsWithoutHomAlt <= limit) {
+        std::string varId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
+                            std::to_string(rec->pos + 1) + ":" +
+                            rec->d.allele[0] + ":" +
+                            (rec->n_allele > 1 ? rec->d.allele[1] : ".");
+        std::cerr << "variant '" << varId << "' has " << AA_count
+                  << " (AA) homozygous alleles (min required: " << minHomCount
+                  << " for minor hom). Skipping..\n";
+      } else if (countVariantsWithoutHomAlt == limit + 1) {
+        std::cerr << "      (truncated...)" << std::endl;
       }
       continue;
     }
@@ -576,9 +601,11 @@ void processVcfFile(
                             std::to_string(rec->pos + 1) + ":" +
                             rec->d.allele[0] + ":" +
                             (rec->n_allele > 1 ? rec->d.allele[1] : ".");
-        std::cerr << "variant '" << varId << "' has "
-                  << Aa_count << " heterozygotes (min required: " << minHetCount
+        std::cerr << "variant '" << varId << "' has " << Aa_count
+                  << " heterozygotes (min required: " << minHetCount
                   << "). Skipping..\n";
+      } else if (countVariantsWithoutHet == limit + 1) {
+        std::cerr << "      (truncated...)" << std::endl;
       }
       continue;
     }
@@ -758,6 +785,8 @@ void processVcfFile(
                        "difference="
                     << minDiff << "). Scaled dosages: aa=" << scaled_aa
                     << ", Aa=" << scaled_Aa << ", AA=" << scaled_AA << "\n";
+        } else if (lowVarianceVariantsCount == warningLimit + 1) {
+          std::cerr << "      (truncated...)" << std::endl;
         }
       }
     }
@@ -935,18 +964,21 @@ void processVcfFile(
   std::cerr << "  * Variants processed       : " << totalVariants << std::endl;
   std::cerr << "  * Variants kept            : " << keptVariants << std::endl;
 
-  if (countVariantsWithoutHomAlt > 0 || countVariantsWithoutHet > 0 ||
-      discardedVariantsCount > 0) {
+  if (countVariantsWithoutHomRef > 0 || countVariantsWithoutHomAlt > 0 ||
+      countVariantsWithoutHet > 0 || discardedVariantsCount > 0) {
     std::cerr << "  * Variants discarded       : "
-              << (countVariantsWithoutHomAlt + countVariantsWithoutHet +
-                  discardedVariantsCount)
+              << (countVariantsWithoutHomRef + countVariantsWithoutHomAlt +
+                  countVariantsWithoutHet + discardedVariantsCount)
               << std::endl;
+    if (countVariantsWithoutHomRef > 0)
+      std::cerr << "      - No homozygous ref    : "
+                << countVariantsWithoutHomRef << std::endl;
     if (countVariantsWithoutHomAlt > 0)
-      std::cerr << "      - No minor homozygous  : "
+      std::cerr << "      - No homozygous alt    : "
                 << countVariantsWithoutHomAlt << std::endl;
     if (countVariantsWithoutHet > 0)
-      std::cerr << "      - Insufficient hets    : "
-                << countVariantsWithoutHet << std::endl;
+      std::cerr << "      - No heterozygous      : " << countVariantsWithoutHet
+                << std::endl;
     if (discardedVariantsCount > 0)
       std::cerr << "      - Not in group map     : " << discardedVariantsCount
                 << std::endl;
@@ -1019,8 +1051,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (minHetCount < 1) {
-    std::cerr << "Error: --min-het-count must be at least 1."
-              << std::endl;
+    std::cerr << "Error: --min-het-count must be at least 1." << std::endl;
     return 1;
   }
 

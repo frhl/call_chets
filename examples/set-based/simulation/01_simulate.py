@@ -140,7 +140,8 @@ def simulate_independent_genes(
     recombination_rate=1e-8,
     mutation_rate=2e-8,
     population_size=10_000,
-    seed=42
+    seed=42,
+    chromosome="1"
 ):
     """
     Simulate multiple genes independently (zero LD between genes).
@@ -250,8 +251,11 @@ def simulate_independent_genes(
     variant_stats_df = pd.concat(all_variants, ignore_index=True)
     genotype_matrix = np.hstack(all_genotypes)
 
-    # Assign variant IDs
-    variant_stats_df['variant_id'] = [f'var_{i}' for i in range(len(variant_stats_df))]
+    # Assign variant IDs in chr:pos:ref:alt format
+    variant_stats_df['variant_id'] = [
+        f"{chromosome}:{pos}:A:T"
+        for pos in variant_stats_df['position']
+    ]
 
     gene_boundaries_df = pd.DataFrame(gene_boundaries)
 
@@ -649,6 +653,9 @@ def create_variant_annotations(variant_stats_df, gene_df,
             'variant_id': row['variant_id'],
             'position': row['position'],
             'maf': row['maf'],
+            'n_hom_ref': row['n_hom_ref'],
+            'n_het': row['n_het'],
+            'n_hom_alt': row['n_hom_alt'],
             'gene_id': gene_id,
             'annotation': annotation_type,
             'is_causal': is_causal
@@ -1029,7 +1036,8 @@ def main():
             recombination_rate=args.recombination_rate,
             mutation_rate=args.mutation_rate,
             population_size=args.population_size,
-            seed=args.seed
+            seed=args.seed,
+            chromosome=args.chromosome
         )
 
         # Save gene boundaries

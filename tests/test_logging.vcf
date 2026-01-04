@@ -1,0 +1,26 @@
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DS,Number=1,Type=Float,Description="Dosage">
+##contig=<ID=chr1>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	Sample1	Sample2	Sample3	Sample4	Sample5	Sample6
+chr1	100	NoHomAlt1	A	T	.	PASS	.	GT	0/0	0/1	0/1	0/0	0/1	0/1
+chr1	200	NoHomAlt2	A	T	.	PASS	.	GT	0/0	0/1	0/1	0/0	0/1	0/1
+chr1	300	NoHomAlt3	A	T	.	PASS	.	GT	0/0	0/1	0/1	0/0	0/1	0/1
+chr1	400	NoHomAlt4	A	T	.	PASS	.	GT	0/0	0/1	0/1	0/0	0/1	0/1
+chr1	500	NoHomAlt5	A	T	.	PASS	.	GT	0/0	0/1	0/1	0/0	0/1	0/1
+chr1	600	NoHomAlt6	A	T	.	PASS	.	GT	0/0	0/1	0/1	0/0	0/1	0/1
+chr1	1000	NoHomRef1	C	G	.	PASS	.	GT	1/1	0/1	0/1	1/1	0/1	1/1
+chr1	2000	NoHomRef2	C	G	.	PASS	.	GT	1/1	0/1	0/1	1/1	0/1	1/1
+chr1	10000	NoHet1	G	C	.	PASS	.	GT	0/0	0/0	1/1	1/1	0/0	1/1
+chr1	20000	NoHet2	G	C	.	PASS	.	GT	0/0	0/0	1/1	1/1	0/0	1/1
+chr1	30000	NoHet3	G	C	.	PASS	.	GT	0/0	0/0	1/1	1/1	0/0	1/1
+chr1	40000	NoHet4	G	C	.	PASS	.	GT	0/0	0/0	1/1	1/1	0/0	1/1
+chr1	50000	NoHet5	G	C	.	PASS	.	GT	0/0	0/0	1/1	1/1	0/0	1/1
+chr1	60000	NoHet6	G	C	.	PASS	.	GT	0/0	0/0	1/1	1/1	0/0	1/1
+chr1	3000	NoHomRef_Warn3	C	G	.	PASS	.	GT	1/1	0/1	0/1	1/1	0/1	1/1
+chr1	4000	NoHomRef_Warn4	C	G	.	PASS	.	GT	1/1	0/1	0/1	1/1	0/1	1/1
+chr1	5000	NoHomRef_Warn5	C	G	.	PASS	.	GT	1/1	0/1	0/1	1/1	0/1	1/1
+chr1	6000	NoHomRef_Warn6	C	G	.	PASS	.	GT	1/1	0/1	0/1	1/1	0/1	1/1
+chr1	7000	NoHomRef_Warn7	C	G	.	PASS	.	GT	1/1	0/1	0/1	1/1	0/1	1/1
+chr1	8000	NoHomRef_Warn8	C	G	.	PASS	.	GT	1/1	0/1	0/1	1/1	0/1	1/1

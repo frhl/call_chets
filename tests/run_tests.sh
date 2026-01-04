@@ -8,7 +8,7 @@ NC='\033[0m' # No Color
 
 # Set paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CALL_CHETS="../bin/call_chets"
+CALL_CHETS="${SCRIPT_DIR}/../bin/call_chets"
 
 # Track test results
 TESTS_PASSED=0
@@ -123,13 +123,13 @@ run_failing_test "phased_mode_unphased_data_should_warn" "genotypes_unphased.txt
 run_test "phased_mode_show_variants" "genotypes_phased.txt.gz" "expected_phased_mode_show_variants.txt" "--show-variants"
 
 # Test 7: Phased mode with --score-map
-run_test "phased_mode_score_map" "genotypes_phased.txt.gz" "expected_phased_mode_score_map.txt" "--score-map score_map.txt.gz"
+run_test "phased_mode_score_map" "genotypes_phased.txt.gz" "expected_phased_mode_score_map.txt" "--score-map ${SCRIPT_DIR}/score_map.txt.gz"
 
 # Test 8: Phased mode with --info-map
-run_test "phased_mode_info_map" "genotypes_phased.txt.gz" "expected_phased_mode_info_map.txt" "--info-map info_map.txt.gz"
+run_test "phased_mode_info_map" "genotypes_phased.txt.gz" "expected_phased_mode_info_map.txt" "--info-map ${SCRIPT_DIR}/info_map.txt.gz"
 
 # Test 9: Phased mode with --score-map and --show-haplotype-scores
-run_test "phased_mode_haplotype_scores" "genotypes_phased.txt.gz" "expected_phased_mode_haplotype_scores.txt" "--score-map score_map.txt.gz --show-haplotype-scores"
+run_test "phased_mode_haplotype_scores" "genotypes_phased.txt.gz" "expected_phased_mode_haplotype_scores.txt" "--score-map ${SCRIPT_DIR}/score_map.txt.gz --show-haplotype-scores"
 
 # Test 10: Phased mode with mixed phased/unphased input (should skip unphased)
 run_test "phased_mode_mixed_input" "genotypes_mixed_phased_unphased.txt.gz" "expected_phased_mode_mixed_input.txt" ""
@@ -144,13 +144,13 @@ run_test "haploid_genotypes" "genotypes_haploid.txt.gz" "expected_haploid_genoty
 run_test "missing_genotypes" "genotypes_missing.txt.gz" "expected_missing_genotypes.txt" ""
 
 # Test 20: Phased mode with collapse rule 'min'
-run_test "phased_mode_collapse_min" "genotypes_phased.txt.gz" "expected_phased_mode_collapse_min.txt" "--score-map score_map.txt.gz --haplotype-collapse min --gene-collapse min --show-haplotype-scores"
+run_test "phased_mode_collapse_min" "genotypes_phased.txt.gz" "expected_phased_mode_collapse_min.txt" "--score-map ${SCRIPT_DIR}/score_map.txt.gz --haplotype-collapse min --gene-collapse min --show-haplotype-scores"
 
 # Test 21: Phased mode with collapse rule 'max'
-run_test "phased_mode_collapse_max" "genotypes_phased.txt.gz" "expected_phased_mode_collapse_max.txt" "--score-map score_map.txt.gz --haplotype-collapse max --gene-collapse max --show-haplotype-scores"
+run_test "phased_mode_collapse_max" "genotypes_phased.txt.gz" "expected_phased_mode_collapse_max.txt" "--score-map ${SCRIPT_DIR}/score_map.txt.gz --haplotype-collapse max --gene-collapse max --show-haplotype-scores"
 
 # Test 22: Phased mode with collapse rule 'additive'
-run_test "phased_mode_collapse_additive" "genotypes_phased.txt.gz" "expected_phased_mode_collapse_additive.txt" "--score-map score_map.txt.gz --haplotype-collapse additive --gene-collapse additive --show-haplotype-scores"
+run_test "phased_mode_collapse_additive" "genotypes_phased.txt.gz" "expected_phased_mode_collapse_additive.txt" "--score-map ${SCRIPT_DIR}/score_map.txt.gz --haplotype-collapse additive --gene-collapse additive --show-haplotype-scores"
 
 echo ""
 echo "======================================"

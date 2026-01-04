@@ -63,12 +63,12 @@ CMD_NONADD="step2_SPAtests.R \
     --sparseGRMSampleIDFile=/output/${GRM}.sampleIDs.txt \
     --groupFile=/input/${GROUPS} \
     --annotation_in_groupTest=${ANNOT} \
-    --maxMAF_in_groupTest=${MAX_MAF} \
+    --maxMAF_in_groupTest=0.50 \
     --SAIGEOutputFile=/output/saige.step2.nonadditive.group.txt \
     --LOCO=FALSE \
     --is_output_markerList_in_groupTest=TRUE \
     --is_output_moreDetails=TRUE \
-    --is_fastTest=TRUE"
+    --is_fastTest=FALSE"
 
 # Run non-additive gene-based test
 docker run --rm -v "$(pwd)/input:/input" -v "$(pwd)/output:/output" \

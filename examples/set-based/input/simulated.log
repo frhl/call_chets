@@ -5,18 +5,18 @@ Options in effect:
   --freq counts
   --out simulated
 
-Hostname: db604d418fdb
+Hostname: c37c51376574
 Working directory: /data
-Start time: Sun Jan  4 10:47:04 2026
+Start time: Sun Jan  4 17:23:21 2026
 
-Random number seed: 1767523624
+Random number seed: 1767547401
 15973 MiB RAM detected; reserving 7986 MiB for main workspace.
 Using up to 6 compute threads.
 5000 samples (0 females, 0 males, 5000 ambiguous; 5000 founders) loaded from
 simulated.fam.
-7197 variants loaded from simulated.bim.
+20000 variants loaded from simulated.bim.
 Note: No phenotype data present.
 Calculating allele frequencies... done.
 --freq counts: Allele counts (founders only) written to simulated.acount .
 
-End time: Sun Jan  4 10:47:04 2026
+End time: Sun Jan  4 17:23:21 2026

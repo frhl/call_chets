@@ -38,8 +38,8 @@ create_test_vcf() {
 chr1	1000	.	A	T	.	PASS	.	GT	0/0	0/1	1/1	0/0
 chr1	2000	.	C	G	.	PASS	.	GT	0/0	0/1	1/1	1/1
 chr1	3000	.	T	A	.	PASS	.	GT	0/0	1/1	1/1	0/1
-chr1	4000	.	G	C	.	PASS	.	GT	0/0	0/0	1/1	1/1
-chr1	5000	.	A	G	.	PASS	.	GT	0/0	1/1	1/1	1/1
+chr1	4000	.	G	C	.	PASS	.	GT	0/0	0/1	1/1	1/1
+chr1	5000	.	A	G	.	PASS	.	GT	0/1	1/1	0/0	1/1
 EOF
 }
 
@@ -72,7 +72,7 @@ test_variant_counting() {
     stderr_file="${SCRIPT_DIR}/stderr_${test_name}.txt"
 
     # Run recode and capture stderr
-    $RECODE --input "${SCRIPT_DIR}/${input_vcf}" --mode "$mode" > "$output_file" 2> "$stderr_file"
+    $RECODE --input "${SCRIPT_DIR}/${input_vcf}" --mode $mode > "$output_file" 2> "$stderr_file"
 
     # Count variants in input (excluding header lines)
     input_count=$(grep -v "^#" "${SCRIPT_DIR}/${input_vcf}" | wc -l | tr -d ' ')
