@@ -113,9 +113,11 @@ void printUsage(const char *path) {
                "(default: 1.0)\n";
   std::cerr << "                             Can be combined with any scaling "
                "option above\n";
-  std::cerr << "\n  --min-hom-count <n>        Minimum number of homozygous "
-               "alternate alleles\n                             required "
-               "(default: 1)\n\nAdditional Options:\n";
+  std::cerr << "\n  --min-hom-count <n>        Minimum number of minor homozygous "
+               "alleles required\n                             (default: 1). "
+               "Applies to min(AA,aa) in dominance mode\n";
+  std::cerr << "  --min-het-count <n>        Minimum number of heterozygous "
+               "alleles required\n                             (default: 1)\n\nAdditional Options:\n";
   std::cerr << "  --set-variant-id           Set variant IDs to "
                "chr:pos:ref:alt format\n";
   std::cerr << "  --all-info                 Include additional info in output "
@@ -168,7 +170,8 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
                     std::string &mode, double &scalingFactor,
                     bool &scalePerVariant, bool &scaleGlobally,
                     bool &setVariantId, bool &allInfo,
-                    std::string &scaleByGroupPath, int &minHomCount) {
+                    std::string &scaleByGroupPath, int &minHomCount,
+                    int &minHetCount) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "--help" || arg == "-h") {
@@ -182,6 +185,8 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
         mode = "dominance";
     } else if (arg == "--min-hom-count" && i + 1 < argc) {
       minHomCount = std::stoi(argv[++i]);
+    } else if (arg == "--min-het-count" && i + 1 < argc) {
+      minHetCount = std::stoi(argv[++i]);
     } else if (arg == "--scale-factor" && i + 1 < argc) {
       scalingFactor = std::stod(argv[++i]);
     } else if (arg == "--scale-per-variant") {
@@ -216,6 +221,7 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
   std::map<std::string, std::string> params;
   params["Mode"] = mode;
   params["Min Hom Count"] = std::to_string(minHomCount);
+  params["Min Het Count"] = std::to_string(minHetCount);
   params["Scale Variant"] = scalePerVariant ? "Yes" : "No";
   params["Scale Global"] = scaleGlobally ? "Yes" : "No";
   params["Scale Factor"] = std::to_string(scalingFactor);
@@ -466,7 +472,7 @@ void processVcfFile(
     bool setVariantId, double scalingFactor,
     const std::map<std::string, std::string> &groupMap,
     const std::map<std::string, std::pair<double, double>> &groupDosages,
-    std::set<std::string> &chromosomes, int minHomCount) {
+    std::set<std::string> &chromosomes, int minHomCount, int minHetCount) {
   bcf1_t *rec = bcf_init();
   int *gt_arr = NULL, ngt_arr = 0;
   float *ds_arr = NULL;
@@ -474,6 +480,7 @@ void processVcfFile(
   int n_samples = bcf_hdr_nsamples(hdr);
   const double epsilon = 1e-8;
   int countVariantsWithoutHomAlt = 0;
+  int countVariantsWithoutHet = 0;
   const int limit = 5;
   int discardedVariantsCount = 0;
   const int warningLimit = 5;
@@ -522,7 +529,8 @@ void processVcfFile(
       auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
           now - processing_start_time);
       int rate = elapsed.count() > 0 ? keptVariants / elapsed.count() : 0;
-      int discarded = discardedVariantsCount + countVariantsWithoutHomAlt;
+      int discarded = discardedVariantsCount + countVariantsWithoutHomAlt +
+                      countVariantsWithoutHet;
       std::cerr << "\r    [Processing] " << keptVariants
                 << " variants written (" << elapsed.count() << "s elapsed, ~"
                 << rate << " var/sec, " << discarded << " discarded)"
@@ -540,19 +548,37 @@ void processVcfFile(
     }
 
     // For dominance mode, we need at least minHomCount homozygous alternates
-    // (minor allele)
+    // (minor allele) and minHetCount heterozygotes
     int minorHomCount = std::min(aa_count, AA_count);
     if ((mode == "dominance" && minorHomCount < minHomCount) ||
         (mode != "dominance" && mode != "recessive")) {
       if (mode == "dominance" && minorHomCount < minHomCount) {
         countVariantsWithoutHomAlt++;
         if (countVariantsWithoutHomAlt <= limit) {
-          std::cerr << "variant '" << bcf_hdr_id2name(hdr, rec->rid) << ":"
-                    << (rec->n_allele > 1 ? rec->d.allele[1] : ".") << "' has "
+          std::string varId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
+                              std::to_string(rec->pos + 1) + ":" +
+                              rec->d.allele[0] + ":" +
+                              (rec->n_allele > 1 ? rec->d.allele[1] : ".");
+          std::cerr << "variant '" << varId << "' has "
                     << AA_count << " (AA) and " << aa_count
                     << " (aa) homozygous alleles (min required: " << minHomCount
                     << " for minor hom). Skipping..\n";
         }
+      }
+      continue;
+    }
+
+    // Check for minimum heterozygote count (applies to dominance mode)
+    if (mode == "dominance" && Aa_count < minHetCount) {
+      countVariantsWithoutHet++;
+      if (countVariantsWithoutHet <= limit) {
+        std::string varId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
+                            std::to_string(rec->pos + 1) + ":" +
+                            rec->d.allele[0] + ":" +
+                            (rec->n_allele > 1 ? rec->d.allele[1] : ".");
+        std::cerr << "variant '" << varId << "' has "
+                  << Aa_count << " heterozygotes (min required: " << minHetCount
+                  << "). Skipping..\n";
       }
       continue;
     }
@@ -909,13 +935,18 @@ void processVcfFile(
   std::cerr << "  * Variants processed       : " << totalVariants << std::endl;
   std::cerr << "  * Variants kept            : " << keptVariants << std::endl;
 
-  if (countVariantsWithoutHomAlt > 0 || discardedVariantsCount > 0) {
+  if (countVariantsWithoutHomAlt > 0 || countVariantsWithoutHet > 0 ||
+      discardedVariantsCount > 0) {
     std::cerr << "  * Variants discarded       : "
-              << (countVariantsWithoutHomAlt + discardedVariantsCount)
+              << (countVariantsWithoutHomAlt + countVariantsWithoutHet +
+                  discardedVariantsCount)
               << std::endl;
     if (countVariantsWithoutHomAlt > 0)
-      std::cerr << "      - No homozygous alt    : "
+      std::cerr << "      - No minor homozygous  : "
                 << countVariantsWithoutHomAlt << std::endl;
+    if (countVariantsWithoutHet > 0)
+      std::cerr << "      - Insufficient hets    : "
+                << countVariantsWithoutHet << std::endl;
     if (discardedVariantsCount > 0)
       std::cerr << "      - Not in group map     : " << discardedVariantsCount
                 << std::endl;
@@ -963,10 +994,11 @@ int main(int argc, char *argv[]) {
   bool allInfo = false;
   std::string scaleByGroupPath;
   int minHomCount = 1;
+  int minHetCount = 1;
 
   if (!parseArguments(argc, argv, pathInput, mode, scalingFactor,
                       scalePerVariant, scaleGlobally, setVariantId, allInfo,
-                      scaleByGroupPath, minHomCount)) {
+                      scaleByGroupPath, minHomCount, minHetCount)) {
     return 1;
   }
 
@@ -978,10 +1010,16 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // Validate minHomCount for dominance mode
+  // Validate minHomCount and minHetCount for dominance mode
   if (mode == "dominance" && minHomCount < 1) {
     std::cerr << "Error: --min-hom-count must be at least 1 when using "
                  "dominance mode."
+              << std::endl;
+    return 1;
+  }
+
+  if (minHetCount < 1) {
+    std::cerr << "Error: --min-het-count must be at least 1."
               << std::endl;
     return 1;
   }
@@ -1152,7 +1190,7 @@ int main(int argc, char *argv[]) {
   processVcfFile(fp, hdr, mode, globalMinDomDosage, globalMaxDomDosage, allInfo,
                  scalePerVariant, scaleGlobally, scaleByGroup, setVariantId,
                  scalingFactor, groupMap, groupDosages, chromosomes,
-                 minHomCount);
+                 minHomCount, minHetCount);
 
   auto pass2_end = std::chrono::steady_clock::now();
   auto pass2_duration =
