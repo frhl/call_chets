@@ -34,12 +34,12 @@ create_test_vcf() {
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
 ##FORMAT=<ID=DS,Number=1,Type=Float,Description="Dosage">
 ##contig=<ID=chr1>
-#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	Sample1	Sample2	Sample3
-chr1	1000	.	A	T	.	PASS	.	GT	0/0	0/1	1/1
-chr1	2000	.	C	G	.	PASS	.	GT	0/0	0/1	1/1
-chr1	3000	.	T	A	.	PASS	.	GT	0/1	1/1	1/1
-chr1	4000	.	G	C	.	PASS	.	GT	0/0	0/0	1/1
-chr1	5000	.	A	G	.	PASS	.	GT	0/0	1/1	1/1
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	Sample1	Sample2	Sample3	Sample4
+chr1	1000	.	A	T	.	PASS	.	GT	0/0	0/1	1/1	0/0
+chr1	2000	.	C	G	.	PASS	.	GT	0/0	0/1	1/1	1/1
+chr1	3000	.	T	A	.	PASS	.	GT	0/0	1/1	1/1	0/1
+chr1	4000	.	G	C	.	PASS	.	GT	0/0	0/0	1/1	1/1
+chr1	5000	.	A	G	.	PASS	.	GT	0/0	1/1	1/1	1/1
 EOF
 }
 
@@ -50,11 +50,11 @@ create_no_homalt_vcf() {
 ##FILTER=<ID=PASS,Description="All filters passed">
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
 ##contig=<ID=chr1>
-#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	Sample1	Sample2	Sample3
-chr1	1000	.	A	T	.	PASS	.	GT	0/0	0/1	1/1
-chr1	2000	.	C	G	.	PASS	.	GT	0/0	0/1	0/1
-chr1	3000	.	T	A	.	PASS	.	GT	0/0	0/0	0/1
-chr1	4000	.	G	C	.	PASS	.	GT	0/1	1/1	1/1
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	Sample1	Sample2	Sample3	Sample4
+chr1	1000	.	A	T	.	PASS	.	GT	0/0	0/1	1/1	0/1
+chr1	2000	.	C	G	.	PASS	.	GT	0/0	0/1	0/1	0/0
+chr1	3000	.	T	A	.	PASS	.	GT	0/0	0/0	0/1	0/1
+chr1	4000	.	G	C	.	PASS	.	GT	0/1	1/1	1/1	0/0
 EOF
 }
 
