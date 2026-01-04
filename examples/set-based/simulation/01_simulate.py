@@ -18,26 +18,29 @@ import tskit
 from pathlib import Path
 
 
-def simulate_genotypes(
+def simulate_gene(
+    gene_idx,
     n_samples=5000,
-    target_variants=1000,
-    sequence_length=20_000_000,
-    recombination_rate=1e-7,
+    gene_length=35_000,
+    target_variants=100,
+    recombination_rate=1e-8,
     mutation_rate=2e-8,
     population_size=10_000,
     seed=42
 ):
     """
-    Simulate genotypes using msprime.
+    Simulate a single gene independently using msprime.
 
     Parameters:
     -----------
+    gene_idx : int
+        Gene index for seed offset
     n_samples : int
         Number of samples to simulate
+    gene_length : int
+        Length of gene region (bp)
     target_variants : int
-        Target number of variants to generate
-    sequence_length : int
-        Length of simulated sequence (bp)
+        Target number of variants for this gene
     recombination_rate : float
         Recombination rate per base pair per generation
     mutation_rate : float
@@ -45,45 +48,218 @@ def simulate_genotypes(
     population_size : int
         Effective population size
     seed : int
+        Base random seed
+
+    Returns:
+    --------
+    variant_stats_df : pd.DataFrame
+        Variant statistics for this gene
+    genotype_matrix : np.ndarray
+        Diploid genotype matrix for this gene
+    """
+    # Use gene-specific seed to ensure independence
+    gene_seed = seed + gene_idx * 1000
+
+    # Simulate ancestry
+    ts = msprime.sim_ancestry(
+        samples=n_samples,
+        population_size=population_size,
+        recombination_rate=recombination_rate,
+        sequence_length=gene_length,
+        random_seed=gene_seed
+    )
+
+    # Add mutations
+    ts = msprime.sim_mutations(
+        ts,
+        rate=mutation_rate,
+        random_seed=gene_seed
+    )
+
+    # Convert to diploid genotypes
+    haplotype_matrix = ts.genotype_matrix().T
+    n_haplotypes, n_variants = haplotype_matrix.shape
+    n_diploid_samples = n_haplotypes // 2
+
+    genotype_matrix = np.zeros((n_diploid_samples, n_variants), dtype=int)
+    for i in range(n_diploid_samples):
+        hap1 = haplotype_matrix[2*i, :]
+        hap2 = haplotype_matrix[2*i+1, :]
+        genotype_matrix[i, :] = hap1 + hap2
+
+    # Compute variant stats
+    variant_stats = []
+    for var_idx, variant in enumerate(ts.variants()):
+        genotypes = genotype_matrix[:, var_idx]
+
+        n_0 = np.sum(genotypes == 0)
+        n_1 = np.sum(genotypes == 1)
+        n_2 = np.sum(genotypes == 2)
+
+        total_alleles = 2 * n_diploid_samples
+        alt_allele_count = n_1 + 2 * n_2
+        af = alt_allele_count / total_alleles
+        maf = min(af, 1 - af)
+
+        variant_stats.append({
+            'position': int(variant.site.position),
+            'n_hom_ref': n_0,
+            'n_het': n_1,
+            'n_hom_alt': n_2,
+            'af': af,
+            'maf': maf
+        })
+
+    variant_stats_df = pd.DataFrame(variant_stats)
+
+    # Track original count
+    n_variants_original = len(variant_stats_df)
+
+    # Downsample to target number of variants if we have more than target
+    if n_variants_original > target_variants:
+        # Randomly sample target_variants
+        np.random.seed(gene_seed + 1)  # Different seed for sampling
+        selected_indices = np.random.choice(n_variants_original, size=target_variants, replace=False)
+        selected_indices = np.sort(selected_indices)  # Keep genomic order
+
+        variant_stats_df = variant_stats_df.iloc[selected_indices].reset_index(drop=True)
+        genotype_matrix = genotype_matrix[:, selected_indices]
+
+    n_variants_final = len(variant_stats_df)
+
+    return variant_stats_df, genotype_matrix, ts.num_mutations, n_variants_original, n_variants_final
+
+
+def simulate_independent_genes(
+    n_genes=20,
+    n_samples=5000,
+    variants_per_gene=100,
+    gene_length_min=30_000,
+    gene_length_max=40_000,
+    intergenic_spacing=1_000_000,
+    recombination_rate=1e-8,
+    mutation_rate=2e-8,
+    population_size=10_000,
+    seed=42
+):
+    """
+    Simulate multiple genes independently (zero LD between genes).
+
+    Each gene is simulated separately with msprime, then combined
+    with large genomic spacing to ensure independence.
+
+    Parameters:
+    -----------
+    n_genes : int
+        Number of independent genes to simulate
+    n_samples : int
+        Number of samples
+    variants_per_gene : int
+        Target variants per gene
+    gene_length_min : int
+        Minimum gene length (bp)
+    gene_length_max : int
+        Maximum gene length (bp)
+    intergenic_spacing : int
+        Space between genes on chromosome (bp)
+    recombination_rate : float
+        Recombination rate per bp
+    mutation_rate : float
+        Mutation rate per bp
+    population_size : int
+        Effective population size
+    seed : int
         Random seed
 
     Returns:
     --------
-    ts : tskit.TreeSequence
-        The simulated tree sequence with mutations
+    variant_stats_df : pd.DataFrame
+        Combined variant statistics
+    genotype_matrix : np.ndarray
+        Combined genotype matrix
+    gene_boundaries : pd.DataFrame
+        Gene boundary information
     """
-    print(f"Simulating genotypes with msprime...", flush=True)
+    print(f"Simulating {n_genes} independent genes...", flush=True)
     print(f"  Samples: {n_samples}", flush=True)
-    print(f"  Target variants: {target_variants}", flush=True)
-    print(f"  Sequence length: {sequence_length:,} bp", flush=True)
+    print(f"  Variants per gene: ~{variants_per_gene}", flush=True)
+    print(f"  Gene length: {gene_length_min:,} - {gene_length_max:,} bp", flush=True)
+    print(f"  Intergenic spacing: {intergenic_spacing:,} bp", flush=True)
     print(f"  Population size: {population_size:,}", flush=True)
     print(f"  Mutation rate: {mutation_rate}", flush=True)
     print(f"  Recombination rate: {recombination_rate}", flush=True)
     print(f"  Random seed: {seed}", flush=True)
 
-    # Simulate ancestry
-    print(f"  Step 1/2: Simulating ancestry (this may take a while)...", flush=True)
-    ts = msprime.sim_ancestry(
-        samples=n_samples,
-        population_size=population_size,
-        recombination_rate=recombination_rate,
-        sequence_length=sequence_length,
-        random_seed=seed
-    )
-    print(f"  Ancestry simulation complete!", flush=True)
+    # Set seed for reproducible gene lengths
+    np.random.seed(seed)
 
-    # Add mutations
-    print(f"  Step 2/2: Adding mutations...", flush=True)
-    ts = msprime.sim_mutations(
-        ts,
-        rate=mutation_rate,
-        random_seed=seed
-    )
+    all_variants = []
+    all_genotypes = []
+    gene_boundaries = []
+    current_position = 0
 
-    print(f"  Generated {ts.num_mutations} mutations", flush=True)
-    print(f"  Number of samples: {ts.num_samples}", flush=True)
+    for gene_idx in range(n_genes):
+        # Random gene length for this gene
+        gene_length = np.random.randint(gene_length_min, gene_length_max + 1)
 
-    return ts
+        print(f"\n  Simulating gene_{gene_idx} ({gene_length:,} bp)...", flush=True)
+
+        # Simulate this gene
+        variant_stats, genotypes, n_mutations, n_original, n_final = simulate_gene(
+            gene_idx=gene_idx,
+            n_samples=n_samples,
+            gene_length=gene_length,
+            target_variants=variants_per_gene,
+            recombination_rate=recombination_rate,
+            mutation_rate=mutation_rate,
+            population_size=population_size,
+            seed=seed
+        )
+
+        # Adjust positions to place gene on chromosome
+        gene_start = current_position
+        gene_end = current_position + gene_length
+        variant_stats['position'] = variant_stats['position'] + gene_start
+        variant_stats['gene_id'] = f'gene_{gene_idx}'
+
+        # Print variant count information
+        if n_original > n_final:
+            print(f"    Generated {n_original} variants → downsampled to {n_final} (MAF range: {variant_stats['maf'].min():.4f} - {variant_stats['maf'].max():.4f})", flush=True)
+        else:
+            print(f"    Generated {n_final} variants (MAF range: {variant_stats['maf'].min():.4f} - {variant_stats['maf'].max():.4f})", flush=True)
+
+        # Store gene boundaries
+        gene_boundaries.append({
+            'gene_id': f'gene_{gene_idx}',
+            'gene_index': gene_idx,
+            'start_position': gene_start,
+            'end_position': gene_end,
+            'length': gene_length,
+            'n_variants': len(variant_stats)
+        })
+
+        # Accumulate
+        all_variants.append(variant_stats)
+        all_genotypes.append(genotypes)
+
+        # Move to next gene position
+        current_position = gene_end + intergenic_spacing
+
+    # Combine all genes
+    print(f"\n  Combining {n_genes} genes...", flush=True)
+    variant_stats_df = pd.concat(all_variants, ignore_index=True)
+    genotype_matrix = np.hstack(all_genotypes)
+
+    # Assign variant IDs
+    variant_stats_df['variant_id'] = [f'var_{i}' for i in range(len(variant_stats_df))]
+
+    gene_boundaries_df = pd.DataFrame(gene_boundaries)
+
+    print(f"\n  Total variants: {len(variant_stats_df)}", flush=True)
+    print(f"  Total genes: {len(gene_boundaries_df)}", flush=True)
+    print(f"  Genotype matrix: {genotype_matrix.shape[0]} samples × {genotype_matrix.shape[1]} variants", flush=True)
+
+    return variant_stats_df, genotype_matrix, gene_boundaries_df
 
 
 def compute_variant_stats(ts):
@@ -354,6 +530,8 @@ def create_gene_boundaries(variant_stats_df, variants_per_gene=50,
 def create_variant_annotations(variant_stats_df, gene_df,
                                 causal_gene_fraction=0.1,
                                 causal_variants_per_gene=5,
+                                pLoF_maf_min=0.0,
+                                pLoF_maf_max=1.0,
                                 seed=42,
                                 output_file=None):
     """
@@ -361,7 +539,7 @@ def create_variant_annotations(variant_stats_df, gene_df,
 
     Uses a gene-based approach:
     1. Select a fraction of genes to be causal
-    2. Within each causal gene, select N variants as causal (pLoF)
+    2. Within each causal gene, select N variants as causal (pLoF) from MAF window
 
     Parameters:
     -----------
@@ -373,6 +551,10 @@ def create_variant_annotations(variant_stats_df, gene_df,
         Fraction of genes that contain causal variants (default: 0.1 = 10%)
     causal_variants_per_gene : int
         Average number of causal variants per causal gene (default: 5)
+    pLoF_maf_min : float
+        Minimum MAF for selecting pLoF variants (default: 0.0)
+    pLoF_maf_max : float
+        Maximum MAF for selecting pLoF variants (default: 1.0)
     seed : int
         Random seed
     output_file : str or None
@@ -386,21 +568,45 @@ def create_variant_annotations(variant_stats_df, gene_df,
     print(f"\nCreating variant annotations (gene-based causal model)...")
     print(f"  Causal gene fraction: {causal_gene_fraction} ({causal_gene_fraction*100:.1f}%)")
     print(f"  Causal variants per gene: ~{causal_variants_per_gene}")
+    print(f"  pLoF MAF window: [{pLoF_maf_min}, {pLoF_maf_max}]")
 
     np.random.seed(seed)
 
     n_genes = len(gene_df)
     n_causal_genes = max(1, int(n_genes * causal_gene_fraction))
 
-    # Step 1: Select causal genes
-    causal_gene_indices = np.random.choice(n_genes, size=n_causal_genes, replace=False)
-    causal_genes = set([f'gene_{idx}' for idx in causal_gene_indices])
+    # Step 1: Pre-filter genes to only those with variants in MAF window
+    eligible_gene_indices = []
+    for gene_idx in range(n_genes):
+        gene_id = f'gene_{gene_idx}'
+        gene_variants = variant_stats_df[variant_stats_df['gene_id'] == gene_id]
+
+        # Check if this gene has at least one variant in MAF window
+        maf_filtered = gene_variants[
+            (gene_variants['maf'] >= pLoF_maf_min) &
+            (gene_variants['maf'] <= pLoF_maf_max)
+        ]
+
+        if len(maf_filtered) > 0:
+            eligible_gene_indices.append(gene_idx)
 
     print(f"  Total genes: {n_genes}")
-    print(f"  Causal genes: {n_causal_genes}")
+    print(f"  Genes with variants in MAF window [{pLoF_maf_min}, {pLoF_maf_max}]: {len(eligible_gene_indices)}")
+
+    # Check if we have enough eligible genes
+    if len(eligible_gene_indices) < n_causal_genes:
+        print(f"  WARNING: Only {len(eligible_gene_indices)} genes have variants in MAF window, but {n_causal_genes} causal genes requested.")
+        print(f"  Using all {len(eligible_gene_indices)} eligible genes as causal.")
+        n_causal_genes = len(eligible_gene_indices)
+
+    # Step 2: Select causal genes from eligible genes only
+    causal_gene_indices = np.random.choice(eligible_gene_indices, size=n_causal_genes, replace=False)
+    causal_genes = set([f'gene_{idx}' for idx in causal_gene_indices])
+
+    print(f"  Causal genes selected: {n_causal_genes}")
     print(f"  Causal gene IDs: {sorted(causal_genes)}")
 
-    # Step 2: For each causal gene, select causal variants
+    # Step 3: For each causal gene, select causal variants from MAF window
     causal_variant_ids = set()
 
     for gene_idx in causal_gene_indices:
@@ -409,13 +615,17 @@ def create_variant_annotations(variant_stats_df, gene_df,
         # Get variants in this gene (using gene_id column)
         gene_variants = variant_stats_df[variant_stats_df['gene_id'] == gene_id]
 
-        if len(gene_variants) == 0:
-            continue
+        # Filter variants by MAF window for pLoF selection
+        maf_filtered_variants = gene_variants[
+            (gene_variants['maf'] >= pLoF_maf_min) &
+            (gene_variants['maf'] <= pLoF_maf_max)
+        ]
 
-        # Select causal variants within this gene
-        n_to_select = min(causal_variants_per_gene, len(gene_variants))
+        # Select causal variants within this gene from MAF window
+        # (guaranteed to have at least 1 variant due to pre-filtering)
+        n_to_select = min(causal_variants_per_gene, len(maf_filtered_variants))
         selected_variant_ids = np.random.choice(
-            gene_variants['variant_id'].values,
+            maf_filtered_variants['variant_id'].values,
             size=n_to_select,
             replace=False
         )
@@ -682,24 +892,30 @@ def main():
     )
     parser.add_argument('--n_samples', type=int, default=5000,
                        help='Number of samples to simulate (default: 5000)')
-    parser.add_argument('--target_variants', type=int, default=1000,
-                       help='Target number of variants (default: 1000)')
-    parser.add_argument('--variants_per_gene', type=int, default=50,
-                       help='Number of variants per gene (default: 50)')
-    parser.add_argument('--avg_intergenic_distance', type=int, default=250_000,
-                       help='Average distance between genes in bp (default: 250000)')
-    parser.add_argument('--gene_length', type=int, default=50_000,
-                       help='Length of each gene in bp (default: 50000)')
-    parser.add_argument('--maf_min', type=float, default=0.01,
-                       help='Minimum MAF for enrichment (default: 0.01)')
-    parser.add_argument('--maf_max', type=float, default=0.05,
-                       help='Maximum MAF for enrichment (default: 0.05)')
-    parser.add_argument('--maf_fraction', type=float, default=0.7,
-                       help='Target fraction of variants in MAF range (default: 0.7)')
+    parser.add_argument('--n_genes', type=int, default=20,
+                       help='Number of independent genes to simulate (default: 20)')
+    parser.add_argument('--variants_per_gene', type=int, default=100,
+                       help='Target variants per gene (default: 100)')
+    parser.add_argument('--gene_length_min', type=int, default=30_000,
+                       help='Minimum gene length in bp (default: 30000)')
+    parser.add_argument('--gene_length_max', type=int, default=40_000,
+                       help='Maximum gene length in bp (default: 40000)')
+    parser.add_argument('--intergenic_spacing', type=int, default=1_000_000,
+                       help='Space between genes in bp (default: 1000000)')
+    parser.add_argument('--recombination_rate', type=float, default=1e-8,
+                       help='Recombination rate per bp (default: 1e-8)')
+    parser.add_argument('--mutation_rate', type=float, default=2e-8,
+                       help='Mutation rate per bp (default: 2e-8)')
+    parser.add_argument('--population_size', type=int, default=10_000,
+                       help='Effective population size (default: 10000)')
     parser.add_argument('--causal_gene_fraction', type=float, default=0.1,
                        help='Fraction of genes containing causal variants (default: 0.1)')
-    parser.add_argument('--causal_variants_per_gene', type=int, default=5,
-                       help='Average number of causal variants per causal gene (default: 5)')
+    parser.add_argument('--causal_variants_per_gene', type=int, default=1,
+                       help='Number of causal variants per causal gene (default: 1)')
+    parser.add_argument('--pLoF_maf_min', type=float, default=0.0,
+                       help='Minimum MAF for selecting pLoF (causal) variants (default: 0.0)')
+    parser.add_argument('--pLoF_maf_max', type=float, default=1.0,
+                       help='Maximum MAF for selecting pLoF (causal) variants (default: 1.0)')
     parser.add_argument('--h2', type=float, default=0.1,
                        help='Heritability for phenotype simulation (default: 0.1)')
     parser.add_argument('--architecture', type=str, default='additive',
@@ -737,15 +953,18 @@ def main():
     # Current genotype simulation parameters (excludes h2 and architecture - those are phenotype-only)
     current_params = {
         'n_samples': args.n_samples,
-        'target_variants': args.target_variants,
+        'n_genes': args.n_genes,
         'variants_per_gene': args.variants_per_gene,
-        'avg_intergenic_distance': args.avg_intergenic_distance,
-        'gene_length': args.gene_length,
-        'maf_min': args.maf_min,
-        'maf_max': args.maf_max,
-        'maf_fraction': args.maf_fraction,
+        'gene_length_min': args.gene_length_min,
+        'gene_length_max': args.gene_length_max,
+        'intergenic_spacing': args.intergenic_spacing,
+        'recombination_rate': args.recombination_rate,
+        'mutation_rate': args.mutation_rate,
+        'population_size': args.population_size,
         'causal_gene_fraction': args.causal_gene_fraction,
         'causal_variants_per_gene': args.causal_variants_per_gene,
+        'pLoF_maf_min': args.pLoF_maf_min,
+        'pLoF_maf_max': args.pLoF_maf_max,
         'seed': args.seed,
     }
 
@@ -799,42 +1018,32 @@ def main():
                 if current_params[key] != saved_params.get(key):
                     print(f"    {key}: {saved_params.get(key)} → {current_params[key]}", flush=True)
 
-        # Step 1: Simulate genotypes
-        ts = simulate_genotypes(
+        # Step 1: Simulate independent genes
+        filtered_stats, filtered_genotypes, gene_df = simulate_independent_genes(
+            n_genes=args.n_genes,
             n_samples=args.n_samples,
-            target_variants=args.target_variants,
-            seed=args.seed
-        )
-
-        # Step 2: Compute variant statistics
-        variant_stats_df, genotype_matrix = compute_variant_stats(ts)
-
-        # Step 3: Filter variants by MAF
-        filtered_stats, filtered_genotypes = filter_variants_by_maf(
-            variant_stats_df,
-            genotype_matrix,
-            target_n=args.target_variants,
-            maf_range=(args.maf_min, args.maf_max),
-            target_fraction=args.maf_fraction,
-            seed=args.seed
-        )
-
-        # Step 4: Create gene boundaries
-        gene_df, filtered_stats = create_gene_boundaries(
-            filtered_stats,
             variants_per_gene=args.variants_per_gene,
-            avg_intergenic_distance=args.avg_intergenic_distance,
-            gene_length=args.gene_length,
-            output_file=output_dir / 'gene_boundaries.tsv',
+            gene_length_min=args.gene_length_min,
+            gene_length_max=args.gene_length_max,
+            intergenic_spacing=args.intergenic_spacing,
+            recombination_rate=args.recombination_rate,
+            mutation_rate=args.mutation_rate,
+            population_size=args.population_size,
             seed=args.seed
         )
 
-        # Step 5: Create variant annotations
+        # Save gene boundaries
+        gene_df.to_csv(output_dir / 'gene_boundaries.tsv', sep='\t', index=False)
+        print(f"\n  Gene boundaries saved", flush=True)
+
+        # Step 2: Create variant annotations
         annotation_df = create_variant_annotations(
             filtered_stats,
             gene_df,
             causal_gene_fraction=args.causal_gene_fraction,
             causal_variants_per_gene=args.causal_variants_per_gene,
+            pLoF_maf_min=args.pLoF_maf_min,
+            pLoF_maf_max=args.pLoF_maf_max,
             seed=args.seed,
             output_file=output_dir / 'variant_annotations.tsv'
         )

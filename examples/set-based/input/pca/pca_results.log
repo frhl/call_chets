@@ -6,11 +6,11 @@ Options in effect:
   --out pca/pca_results
   --pca 10
 
-Hostname: 8f158c2eae54
+Hostname: 00fd7e45c424
 Working directory: /data
-Start time: Sat Jan  3 12:01:31 2026
+Start time: Sat Jan  3 22:03:44 2026
 
-Random number seed: 1767441691
+Random number seed: 1767477824
 15973 MiB RAM detected; reserving 7986 MiB for main workspace.
 Using up to 6 compute threads.
 5000 samples (0 females, 0 males, 5000 ambiguous; 5000 founders) loaded from
@@ -26,4 +26,4 @@ Extracting eigenvalues and eigenvectors... done.
 --pca: Eigenvectors written to pca/pca_results.eigenvec , and eigenvalues
 written to pca/pca_results.eigenval .
 
-End time: Sat Jan  3 12:01:38 2026
+End time: Sat Jan  3 22:04:00 2026

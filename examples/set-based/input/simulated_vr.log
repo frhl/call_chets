@@ -6,11 +6,11 @@ Options in effect:
   --make-bed
   --out simulated_vr
 
-Hostname: cf23e6995dc2
+Hostname: 0c14c5535bbf
 Working directory: /data
-Start time: Sat Jan  3 11:58:04 2026
+Start time: Sat Jan  3 22:04:45 2026
 
-Random number seed: 1767441484
+Random number seed: 1767477885
 15973 MiB RAM detected; reserving 7986 MiB for main workspace.
 Using up to 6 compute threads.
 5000 samples (0 females, 0 males, 5000 ambiguous; 5000 founders) loaded from
@@ -23,4 +23,4 @@ Writing simulated_vr.fam ... done.
 Writing simulated_vr.bim ... done.
 Writing simulated_vr.bed ... done.
 
-End time: Sat Jan  3 11:58:04 2026
+End time: Sat Jan  3 22:04:45 2026

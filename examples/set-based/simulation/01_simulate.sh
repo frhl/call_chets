@@ -7,15 +7,20 @@ set -euo pipefail
 # Configuration
 CONDA_ENV="pop_sim"
 N_SAMPLES=5000
-TARGET_VARIANTS=10000
-VARIANTS_PER_GENE=50
-MAF_MIN=0.01
-MAF_MAX=0.05
-MAF_FRACTION=0.7
-CAUSAL_GENE_FRACTION=0.1  # 10% of genes are causal
-CAUSAL_VARIANTS_PER_GENE=5  # Average causal variants per causal gene
-H2=0.10
-ARCHITECTURE="additive"
+N_GENES=100                      # Number of independent genes
+VARIANTS_PER_GENE=200            # Variants per gene
+GENE_LENGTH_MIN=30000            # Min gene length in bp
+GENE_LENGTH_MAX=40000            # Max gene length in bp
+INTERGENIC_SPACING=1000000       # Space between genes (1 Mb)
+RECOMBINATION_RATE=1e-7          # Recombination rate per bp
+MUTATION_RATE=2e-7               # Mutation rate per bp
+POPULATION_SIZE=10000            # Effective population size
+CAUSAL_GENE_FRACTION=0.07        # 7% of genes are causal
+CAUSAL_VARIANTS_PER_GENE=1       # Causal variants per causal gene
+PLOF_MAF_MIN=0.02                # Minimum MAF for pLoF variant selection
+PLOF_MAF_MAX=0.05                # Maximum MAF for pLoF variant selection
+H2=0.01
+ARCHITECTURE="recessive"
 SEED=42
 OUTPUT_DIR="../input"
 OUTPUT_PREFIX="simulated"
@@ -29,13 +34,18 @@ echo "=========================================="
 # Use -u for unbuffered Python output, --no-capture-output for conda
 conda run --no-capture-output -n ${CONDA_ENV} python -u 01_simulate.py \
     --n_samples ${N_SAMPLES} \
-    --target_variants ${TARGET_VARIANTS} \
+    --n_genes ${N_GENES} \
     --variants_per_gene ${VARIANTS_PER_GENE} \
-    --maf_min ${MAF_MIN} \
-    --maf_max ${MAF_MAX} \
-    --maf_fraction ${MAF_FRACTION} \
+    --gene_length_min ${GENE_LENGTH_MIN} \
+    --gene_length_max ${GENE_LENGTH_MAX} \
+    --intergenic_spacing ${INTERGENIC_SPACING} \
+    --recombination_rate ${RECOMBINATION_RATE} \
+    --mutation_rate ${MUTATION_RATE} \
+    --population_size ${POPULATION_SIZE} \
     --causal_gene_fraction ${CAUSAL_GENE_FRACTION} \
     --causal_variants_per_gene ${CAUSAL_VARIANTS_PER_GENE} \
+    --pLoF_maf_min ${PLOF_MAF_MIN} \
+    --pLoF_maf_max ${PLOF_MAF_MAX} \
     --h2 ${H2} \
     --architecture ${ARCHITECTURE} \
     --seed ${SEED} \
