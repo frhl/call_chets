@@ -1,82 +1,72 @@
-# Create a VCF with nonadditive encoding
+# call_chets
 
 [![Tests](https://github.com/frhl/call_chets/actions/workflows/tests.yml/badge.svg)](https://github.com/frhl/call_chets/actions/workflows/tests.yml)
 [![Docker](https://github.com/frhl/call_chets/actions/workflows/docker-image.yml/badge.svg)](https://github.com/frhl/call_chets/actions/workflows/docker-image.yml)
 
-Efficient C++ tools for detecting biallelic (compound heterozygous or homozygous) variants and/or recoding them to either recessive or nonadditive genotypes.
+C++ tools for encoding biallelic variants in VCFs and performing allelic recoding for non-additive (dominance deviation) analysis.
 
 ## Tools
-All binaries are compiled to `bin/`. Legacy names are preserved as symlinks but deprecated.
-- `interpret_phase` (formerly `call_chets`): Core tool to identify compound heterozygous variants from phased data.
-- `make_pseudo_vcf` (formerly `encode_vcf`): Converts phased results into a VCF.
-- `recode` (formerly `orthogonalize`): Transforms VCFs with orthogonal dominance or recessive encodings.
-- `filter_pp` (formerly `filter_vcf_by_pp`): Filters VCFs based on posterior probabilities.
 
-## Installation
+*   `interpret_phase`: Identify compound heterozygous (and homozygous) variants from phased genotypes.
+*   `make_pseudo_vcf`: Convert phased results into a pseudo-variant (biallelic) VCF.
+*   `recode`: Orthogonalize or recode VCFs for non-additive (`[0,1,2]->[-ha, -ar, -hr]`) or recessive (`[0,1,2]->[0,0,1]`) genotypes.
 
-### From Source
-Requirements: `htslib` (bundled or system), `zlib`, `g++`, `make`.
+## Quick Start (Docker)
+
+The easiest way to run the tools is via Docker.
+
+```bash
+# Pull the image
+docker pull fhlassen/call_chets:latest
+
+# Run example (mount current directory to /data)
+docker run -v $PWD:/data fhlassen/call_chets interpret_phase --help
+```
+
+## Installation (Source)
+
+Requirements: `htslib`, `zlib`, `g++`, `make`.
 
 ```bash
 make
-sudo make install # Optional: installs to /usr/local/bin
+sudo make install
 ```
 
-### Docker
-You can pull the pre-built image from Docker Hub (replace `<USERNAME>` with your Docker Hub username):
-```bash
-docker pull <USERNAME>/call_chets:latest
-# or for a specific version
-docker pull <USERNAME>/call_chets:1.0.1
-```
+## Usage Workflow
 
-Or build locally:
-```bash
-docker build -t call_chets .
-```
+Note: If running via Docker, prefix commands with `docker run -v $PWD:/data fhlassen/call_chets`.
 
-## Quick Start
-*Note: Examples assume you ran `make install`. If not, prefix commands with `bin/` (e.g., `bin/interpret_phase`).*
-
-### 1/3. Prepare Data
-Extract phased genotypes from your VCF:
+### 1. Prepare Data
+Extract phased genotypes from a VCF:
 ```bash
-bcftools view trio.vcf --max-af 0.01 -Ou | \
+bcftools view tests/trio.vcf --max-af 0.01 -Ou | \
   bcftools query -i'GT="alt"' -f'[%SAMPLE %CHROM:%POS:%REF:%ALT %GT\n]' | \
   gzip > trio.phased_sites.txt.gz
 ```
 
-### 2/3. Call Variants
-Run `interpret_phase` using a gene mapping file:
+### 2. Call Compound Hets
+Run `interpret_phase` with your genotypes and a gene map:
 ```bash
 interpret_phase \
   --geno genotypes.txt.gz \
-  --gene-map gene_map.txt \
+  --gene-map tests/gene_map.txt \
   --verbose > results.txt
 ```
 
-For unphased data, add the `--unphased` flag:
-```bash
-interpret_phase \
-  --geno genotypes.txt.gz \
-  --gene-map gene_map.txt \
-  --unphased > results.txt
-```
-
-### 3/3. Convert to VCF
-Create a VCF with nonadditive (domiannce) dosages:
+### 3. Convert to VCF
+Create a VCF with non-additive dosages:
 ```bash
 make_pseudo_vcf \
   --input results.txt \
-  --samples samples.txt \
+  --samples tests/samples.txt \
   --mode dominance \
   --min-ac 1 | bgzip > output.vcf.gz
 ```
 
-### 4. Recode
-You can also recode any VCF directly (either with or without phased information) into orthogonal or recessive encodings:
+### 4. Recode Existing VCFs
+Orthogonalize or recode any VCF:
 ```bash
 recode \
-  --input any_variant_file.vcf.gz \
+  --input variants.vcf.gz \
   --mode dominance | bgzip > recoded.vcf.gz
 ```

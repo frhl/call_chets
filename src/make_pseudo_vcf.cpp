@@ -107,8 +107,8 @@ void printUsage(const char *path) {
                "'additive' or '012'";
   std::cerr << "\n                 for dosages of 0, 1, and 2. Use 'recessive' "
                "or '001' for";
-  std::cerr << "\n                 dosages of 0 and 2. Use 'dominance' to "
-               "encode orthogonal";
+  std::cerr << "\n                 dosages of 0 and 2. Use 'dominance' or "
+               "'nonadditive' to encode orthogonal";
   std::cerr << "\n                 contribution for dominance effects. '010' "
                "and '011' represent";
   std::cerr << "\n                 custom modes setting bi-allelics to zero or "
@@ -273,11 +273,14 @@ int main(int argc, char *argv[]) {
     mode = "001";
   else if (mode == "additive")
     mode = "012";
+  else if (mode == "nonadditive")
+    mode = "dominance";
 
   if (mode != "001" && mode != "012" && mode != "010" && mode != "011" &&
       mode != "dominance") {
     std::cerr << "Error: Invalid dosage encoding mode provided. Only "
-                 "'012|additive, '001|recessive', '010', '011' or 'dominance'."
+                 "'012|additive, '001|recessive', '010', '011' or "
+                 "'dominance|nonadditive'."
               << std::endl;
     printUsage(argv[0]);
     gzclose(longFile);

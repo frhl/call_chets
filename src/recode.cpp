@@ -89,7 +89,7 @@ void printUsage(const char *path) {
       << "  --mode/-m <mode>           Processing mode (default: dominance)\n";
   std::cerr << "                             Supported modes:\n";
   std::cerr << "                               - dominance: Dominance "
-               "deviation encoding\n";
+               "deviation encoding (alias: nonadditive)\n";
   std::cerr << "                               - recessive: Set heterozygotes "
                "to 0, homozygotes unchanged\n";
   std::cerr << "\nScaling Options (mutually exclusive):\n";
@@ -113,7 +113,9 @@ void printUsage(const char *path) {
                "(default: 1.0)\n";
   std::cerr << "                             Can be combined with any scaling "
                "option above\n";
-  std::cerr << "\n  --min-hom-count <n>        Minimum number of homozygous alternate alleles\n                             required (default: 1)\n\nAdditional Options:\n";
+  std::cerr << "\n  --min-hom-count <n>        Minimum number of homozygous "
+               "alternate alleles\n                             required "
+               "(default: 1)\n\nAdditional Options:\n";
   std::cerr << "  --set-variant-id           Set variant IDs to "
                "chr:pos:ref:alt format\n";
   std::cerr << "  --all-info                 Include additional info in output "
@@ -176,6 +178,8 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
       pathInput = argv[++i];
     } else if ((arg == "--mode" || arg == "-m") && i + 1 < argc) {
       mode = argv[++i];
+      if (mode == "nonadditive")
+        mode = "dominance";
     } else if (arg == "--min-hom-count" && i + 1 < argc) {
       minHomCount = std::stoi(argv[++i]);
     } else if (arg == "--scale-factor" && i + 1 < argc) {
@@ -325,18 +329,21 @@ void calculateGlobalAndGroupDosages(
     processedVariants++;
     if (processedVariants % 10000 == 0) {
       auto now = std::chrono::steady_clock::now();
-      auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - pass1_start_time);
+      auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+          now - pass1_start_time);
       int rate = elapsed.count() > 0 ? processedVariants / elapsed.count() : 0;
       std::cerr << "\r    [Pass 1] " << processedVariants
-                << " variants processed (" << elapsed.count()
-                << "s elapsed, ~" << rate << " var/sec)" << std::flush;
+                << " variants processed (" << elapsed.count() << "s elapsed, ~"
+                << rate << " var/sec)" << std::flush;
     }
     chromosomes.insert(bcf_hdr_id2name(hdr, rec->rid));
     bcf_unpack(rec, BCF_UN_STR);
 
-    int ngt = has_gt_format ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
-    int nds =
-        has_ds_format ? bcf_get_format_float(hdr, rec, "DS", &ds_arr, &nds_arr) : 0;
+    int ngt =
+        has_gt_format ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
+    int nds = has_ds_format
+                  ? bcf_get_format_float(hdr, rec, "DS", &ds_arr, &nds_arr)
+                  : 0;
 
     // Per-variant flags for successful retrieval
     bool has_gt = has_gt_format && ngt >= 0;
@@ -496,9 +503,11 @@ void processVcfFile(
     // Collect chromosome names as we process
     chromosomes.insert(bcf_hdr_id2name(hdr, rec->rid));
 
-    int ngt = has_gt_format ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
-    int nds =
-        has_ds_format ? bcf_get_format_float(hdr, rec, "DS", &ds_arr, &nds_arr) : 0;
+    int ngt =
+        has_gt_format ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
+    int nds = has_ds_format
+                  ? bcf_get_format_float(hdr, rec, "DS", &ds_arr, &nds_arr)
+                  : 0;
 
     // Per-variant flags for successful retrieval
     bool has_gt = has_gt_format && ngt >= 0;
@@ -510,13 +519,14 @@ void processVcfFile(
     // Progress logging every 10000 variants
     if (keptVariants > 0 && keptVariants % 10000 == 0) {
       auto now = std::chrono::steady_clock::now();
-      auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - processing_start_time);
+      auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+          now - processing_start_time);
       int rate = elapsed.count() > 0 ? keptVariants / elapsed.count() : 0;
       int discarded = discardedVariantsCount + countVariantsWithoutHomAlt;
       std::cerr << "\r    [Processing] " << keptVariants
-                << " variants written (" << elapsed.count()
-                << "s elapsed, ~" << rate << " var/sec, "
-                << discarded << " discarded)" << std::flush;
+                << " variants written (" << elapsed.count() << "s elapsed, ~"
+                << rate << " var/sec, " << discarded << " discarded)"
+                << std::flush;
     }
 
     int aa_count = 0, Aa_count = 0, AA_count = 0, non_missing_count = 0;
@@ -536,8 +546,10 @@ void processVcfFile(
         countVariantsWithoutHomAlt++;
         if (countVariantsWithoutHomAlt <= limit) {
           std::cerr << "variant '" << bcf_hdr_id2name(hdr, rec->rid) << ":"
-                    << (rec->n_allele > 1 ? rec->d.allele[1] : ".")
-                    << "' has " << AA_count << " homozygous alternate alleles (min required: " << minHomCount << "). Skipping..\n";
+                    << (rec->n_allele > 1 ? rec->d.allele[1] : ".") << "' has "
+                    << AA_count
+                    << " homozygous alternate alleles (min required: "
+                    << minHomCount << "). Skipping..\n";
         }
       }
       continue;
@@ -595,7 +607,8 @@ void processVcfFile(
         localMaxDomDosage = groupDosages.at(groupName).second;
         group = groupName;
       }
-      // else: scaleGlobally uses globalMinDomDosage/globalMaxDomDosage (already set above)
+      // else: scaleGlobally uses globalMinDomDosage/globalMaxDomDosage (already
+      // set above)
     }
 
     if (setVariantId) {
@@ -723,7 +736,8 @@ void processVcfFile(
 
     std::cout << "\tDS";
 
-    // Pre-allocate buffer for output line (estimate: ~10 bytes per sample on average)
+    // Pre-allocate buffer for output line (estimate: ~10 bytes per sample on
+    // average)
     std::string output_line;
     output_line.reserve(n_samples * 10);
 
@@ -964,7 +978,9 @@ int main(int argc, char *argv[]) {
 
   // Validate minHomCount for dominance mode
   if (mode == "dominance" && minHomCount < 1) {
-    std::cerr << "Error: --min-hom-count must be at least 1 when using dominance mode." << std::endl;
+    std::cerr << "Error: --min-hom-count must be at least 1 when using "
+                 "dominance mode."
+              << std::endl;
     return 1;
   }
 
@@ -1002,7 +1018,8 @@ int main(int argc, char *argv[]) {
     double scaledValue = 2.0 * scalingFactor;
     // Format the scaled value nicely
     if (scaledValue == static_cast<int>(scaledValue)) {
-      std::cerr << "[0, 1, 2] -> [0, 0, " << static_cast<int>(scaledValue) << "]" << std::endl;
+      std::cerr << "[0, 1, 2] -> [0, 0, " << static_cast<int>(scaledValue)
+                << "]" << std::endl;
     } else {
       std::cerr << "[0, 1, 2] -> [0, 0, " << scaledValue << "]" << std::endl;
     }
@@ -1011,7 +1028,7 @@ int main(int argc, char *argv[]) {
   }
   std::cerr << "  * Number of passes: " << numPasses << std::endl;
   std::cerr << "  * Number of samples: " << n_samples << std::endl;
-  std::cerr << std::endl;  // Blank line after Parameters section
+  std::cerr << std::endl; // Blank line after Parameters section
 
   // Validate that VCF has GT or DS format fields
   bool has_gt = hasFormat(hdr, "GT");
@@ -1069,8 +1086,10 @@ int main(int argc, char *argv[]) {
     }
 
     auto pass1_end = std::chrono::steady_clock::now();
-    auto pass1_duration = std::chrono::duration_cast<std::chrono::seconds>(pass1_end - pass1_start);
-    std::cerr << "  * Pass 1 completed in " << pass1_duration.count() << " seconds" << std::endl;
+    auto pass1_duration = std::chrono::duration_cast<std::chrono::seconds>(
+        pass1_end - pass1_start);
+    std::cerr << "  * Pass 1 completed in " << pass1_duration.count()
+              << " seconds" << std::endl;
 
     // Validate that we found at least one variant
     if (chromosomes.empty()) {
@@ -1111,12 +1130,14 @@ int main(int argc, char *argv[]) {
 
     hdr = bcf_hdr_read(fp);
 
-    printHeader(hdr, sortedContigs, mode, globalMinDomDosage, globalMaxDomDosage,
-                allInfo, scalePerVariant, scaleGlobally, scaleByGroup);
+    printHeader(hdr, sortedContigs, mode, globalMinDomDosage,
+                globalMaxDomDosage, allInfo, scalePerVariant, scaleGlobally,
+                scaleByGroup);
 
     std::cerr << "Processing variants (two passes)..." << std::endl;
   } else {
-    // Single pass mode - print header without contigs (we'll collect them during processing)
+    // Single pass mode - print header without contigs (we'll collect them
+    // during processing)
     std::vector<std::string> emptyContigs;
     printHeader(hdr, emptyContigs, mode, globalMinDomDosage, globalMaxDomDosage,
                 allInfo, scalePerVariant, scaleGlobally, scaleByGroup);
@@ -1128,14 +1149,18 @@ int main(int argc, char *argv[]) {
 
   processVcfFile(fp, hdr, mode, globalMinDomDosage, globalMaxDomDosage, allInfo,
                  scalePerVariant, scaleGlobally, scaleByGroup, setVariantId,
-                 scalingFactor, groupMap, groupDosages, chromosomes, minHomCount);
+                 scalingFactor, groupMap, groupDosages, chromosomes,
+                 minHomCount);
 
   auto pass2_end = std::chrono::steady_clock::now();
-  auto pass2_duration = std::chrono::duration_cast<std::chrono::seconds>(pass2_end - pass2_start);
+  auto pass2_duration =
+      std::chrono::duration_cast<std::chrono::seconds>(pass2_end - pass2_start);
   if (needTwoPass) {
-    std::cerr << "  * Pass 2 completed in " << pass2_duration.count() << " seconds" << std::endl;
+    std::cerr << "  * Pass 2 completed in " << pass2_duration.count()
+              << " seconds" << std::endl;
   } else {
-    std::cerr << "  * Processing completed in " << pass2_duration.count() << " seconds" << std::endl;
+    std::cerr << "  * Processing completed in " << pass2_duration.count()
+              << " seconds" << std::endl;
   }
 
   bcf_hdr_destroy(hdr);

@@ -1,8 +1,6 @@
 playground/
 variant_to_gene/
 testhat/
-*.txt
-*.gz
 *.tar.gz
 *.o
 .CACHED
