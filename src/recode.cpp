@@ -540,16 +540,18 @@ void processVcfFile(
     }
 
     // For dominance mode, we need at least minHomCount homozygous alternates
-    if ((mode == "dominance" && AA_count < minHomCount) ||
+    // (minor allele)
+    int minorHomCount = std::min(aa_count, AA_count);
+    if ((mode == "dominance" && minorHomCount < minHomCount) ||
         (mode != "dominance" && mode != "recessive")) {
-      if (mode == "dominance" && AA_count < minHomCount) {
+      if (mode == "dominance" && minorHomCount < minHomCount) {
         countVariantsWithoutHomAlt++;
         if (countVariantsWithoutHomAlt <= limit) {
           std::cerr << "variant '" << bcf_hdr_id2name(hdr, rec->rid) << ":"
                     << (rec->n_allele > 1 ? rec->d.allele[1] : ".") << "' has "
-                    << AA_count
-                    << " homozygous alternate alleles (min required: "
-                    << minHomCount << "). Skipping..\n";
+                    << AA_count << " (AA) and " << aa_count
+                    << " (aa) homozygous alleles (min required: " << minHomCount
+                    << " for minor hom). Skipping..\n";
         }
       }
       continue;

@@ -391,12 +391,15 @@ int main(int argc, char *argv[]) {
         int currentHet = geneHet[genePair.first];
         int currentCis = geneCis[genePair.first];
 
-        if (mode == "dominance" && currentBI == 0) {
+        // derive reference alleles (homozygous reference count)
+        int aa_count_int =
+            (currentAN / 2) - (currentCis + currentHet + currentBI);
+
+        if (mode == "dominance" && (currentBI == 0 || aa_count_int == 0)) {
           continue;
         }
 
-        float aa_count = static_cast<float>(
-            (currentAN / 2) - (currentCis + currentHet + currentBI));
+        float aa_count = static_cast<float>(aa_count_int);
         float Aa_count = static_cast<float>(currentHet + currentCis);
         float AA_count = static_cast<float>(currentBI);
 

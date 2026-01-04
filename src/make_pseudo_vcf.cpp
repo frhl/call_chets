@@ -711,15 +711,17 @@ int main(int argc, char *argv[]) {
         int currentHet = geneHet[genePair.first];
         int currentCis = geneCis[genePair.first];
 
+        // derive reference alleles (homozygous reference count)
+        int aa_count_int =
+            (currentAN / 2) - (currentCis + currentHet + currentBI);
+
         // Skip processing this gene/pseudo-variant if
-        // in dominance mode and no homozygotes present
-        if (mode == "dominance" && currentBI == 0) {
+        // in dominance mode and no homozygotes present (either ref or alt)
+        if (mode == "dominance" && (currentBI == 0 || aa_count_int == 0)) {
           continue;
         }
 
-        // derive reference alleles
-        float aa_count = static_cast<float>(
-            (currentAN / 2) - (currentCis + currentHet + currentBI));
+        float aa_count = static_cast<float>(aa_count_int);
         float Aa_count = static_cast<float>(currentHet + currentCis);
         float AA_count = static_cast<float>(currentBI);
 
