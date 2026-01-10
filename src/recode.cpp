@@ -143,8 +143,17 @@ void printUsage(const char *path) {
   std::cerr << "    " << path
             << " --input sample.vcf.gz --scale-per-variant --all-info "
                "--set-variant-id\n";
-  std::cerr << "\n  Using recessive mode:\n";
   std::cerr << "    " << path << " --input sample.vcf.gz --mode recessive\n";
+
+  std::cerr << "\nFrequency & Count Filtering:\n";
+  std::cerr
+      << "  --min-[aac|mac] <n>        Min Alternate/Minor Allele Count\n";
+  std::cerr
+      << "  --max-[aac|mac] <n>        Max Alternate/Minor Allele Count\n";
+  std::cerr
+      << "  --min-[aaf|maf] <f>        Min Alternate/Minor Allele Frequency\n";
+  std::cerr
+      << "  --max-[aaf|maf] <f>        Max Alternate/Minor Allele Frequency\n";
 }
 
 std::vector<std::string> sortChromosomes(const std::set<std::string> &contigs) {
@@ -173,7 +182,9 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
                     bool &scalePerVariant, bool &scaleGlobally,
                     bool &setVariantId, bool &allInfo,
                     std::string &scaleByGroupPath, int &minHomCount,
-                    int &minHetCount) {
+                    int &minHetCount, int &minAAC, int &maxAAC, int &minMAC,
+                    int &maxMAC, double &minAAF, double &maxAAF, double &minMAF,
+                    double &maxMAF) {
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "--help" || arg == "-h") {
@@ -201,6 +212,22 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
       allInfo = true;
     } else if (arg == "--scale-by-group" && i + 1 < argc) {
       scaleByGroupPath = argv[++i];
+    } else if (arg == "--min-aac" && i + 1 < argc) {
+      minAAC = std::stoi(argv[++i]);
+    } else if (arg == "--max-aac" && i + 1 < argc) {
+      maxAAC = std::stoi(argv[++i]);
+    } else if (arg == "--min-mac" && i + 1 < argc) {
+      minMAC = std::stoi(argv[++i]);
+    } else if (arg == "--max-mac" && i + 1 < argc) {
+      maxMAC = std::stoi(argv[++i]);
+    } else if (arg == "--min-aaf" && i + 1 < argc) {
+      minAAF = std::stod(argv[++i]);
+    } else if (arg == "--max-aaf" && i + 1 < argc) {
+      maxAAF = std::stod(argv[++i]);
+    } else if (arg == "--min-maf" && i + 1 < argc) {
+      minMAF = std::stod(argv[++i]);
+    } else if (arg == "--max-maf" && i + 1 < argc) {
+      maxMAF = std::stod(argv[++i]);
     } else {
       std::cerr << "Error! Unknown or incomplete argument: " << arg
                 << std::endl;
@@ -474,7 +501,9 @@ void processVcfFile(
     bool setVariantId, double scalingFactor,
     const std::map<std::string, std::string> &groupMap,
     const std::map<std::string, std::pair<double, double>> &groupDosages,
-    std::set<std::string> &chromosomes, int minHomCount, int minHetCount) {
+    std::set<std::string> &chromosomes, int minHomCount, int minHetCount,
+    int minAAC, int maxAAC, int minMAC, int maxMAC, double minAAF,
+    double maxAAF, double minMAF, double maxMAF) {
   bcf1_t *rec = bcf_init();
   int *gt_arr = NULL, ngt_arr = 0;
   float *ds_arr = NULL;
@@ -631,6 +660,30 @@ void processVcfFile(
       h = static_cast<double>(Aa_count) / non_missing_count;
       a = static_cast<double>(AA_count) / non_missing_count;
     }
+
+    // Calculate allele counts and frequencies for filtering
+    int total_alleles = 2 * non_missing_count;
+    int aac_count = Aa_count + 2 * AA_count;
+    int ref_count = 2 * aa_count + Aa_count;
+    int mac_count = std::min(aac_count, ref_count);
+    double aaf_val = (double)aac_count / total_alleles;
+    double maf_val = (double)mac_count / total_alleles;
+    // std::cerr << "Debug: Counts calculated. AAC=" << aac_count << " MAC=" <<
+    // mac_count << std::endl;
+
+    // Apply filters
+    if ((minAAC >= 0 && aac_count < minAAC) ||
+        (maxAAC != std::numeric_limits<int>::max() && aac_count > maxAAC))
+      continue;
+    if ((minMAC >= 0 && mac_count < minMAC) ||
+        (maxMAC != std::numeric_limits<int>::max() && mac_count > maxMAC))
+      continue;
+    if ((minAAF >= 0.0 && aaf_val < minAAF) ||
+        (maxAAF != std::numeric_limits<double>::max() && aaf_val > maxAAF))
+      continue;
+    if ((minMAF >= 0.0 && maf_val < minMAF) ||
+        (maxMAF != std::numeric_limits<double>::max() && maf_val > maxMAF))
+      continue;
 
     if (mode == "dominance") {
       dom_dosage_aa = -h * a;
@@ -1027,10 +1080,15 @@ int main(int argc, char *argv[]) {
   std::string scaleByGroupPath;
   int minHomCount = 1;
   int minHetCount = 1;
+  int minAAC = -1, maxAAC = std::numeric_limits<int>::max();
+  int minMAC = -1, maxMAC = std::numeric_limits<int>::max();
+  double minAAF = -1.0, maxAAF = std::numeric_limits<double>::max();
+  double minMAF = -1.0, maxMAF = std::numeric_limits<double>::max();
 
   if (!parseArguments(argc, argv, pathInput, mode, scalingFactor,
                       scalePerVariant, scaleGlobally, setVariantId, allInfo,
-                      scaleByGroupPath, minHomCount, minHetCount)) {
+                      scaleByGroupPath, minHomCount, minHetCount, minAAC,
+                      maxAAC, minMAC, maxMAC, minAAF, maxAAF, minMAF, maxMAF)) {
     return 1;
   }
 
@@ -1221,7 +1279,8 @@ int main(int argc, char *argv[]) {
   processVcfFile(fp, hdr, mode, globalMinDomDosage, globalMaxDomDosage, allInfo,
                  scalePerVariant, scaleGlobally, scaleByGroup, setVariantId,
                  scalingFactor, groupMap, groupDosages, chromosomes,
-                 minHomCount, minHetCount);
+                 minHomCount, minHetCount, minAAC, maxAAC, minMAC, maxMAC,
+                 minAAF, maxAAF, minMAF, maxMAF);
 
   auto pass2_end = std::chrono::steady_clock::now();
   auto pass2_duration =

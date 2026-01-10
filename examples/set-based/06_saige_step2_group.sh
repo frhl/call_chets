@@ -6,7 +6,7 @@ set -euo pipefail
 # Config
 VCF="simulated.vcf.gz"
 VCF_NONADD="simulated.nonadditive.vcf.gz"
-GROUPS="genesets_all.txt"
+GENESET_FILE="genesets_all.txt"
 ANNOT="pLoF,synonymous"
 MAX_MAF="0.001,0.05,0.1"
 GRM=$(find output -name "sparseGRM*.mtx" | head -n 1 | xargs basename)
@@ -28,7 +28,7 @@ CMD_ADD="step2_SPAtests.R \
     --varianceRatioFile=/output/null_model.varianceRatio.txt \
     --sparseGRMFile=/output/${GRM} \
     --sparseGRMSampleIDFile=/output/${GRM}.sampleIDs.txt \
-    --groupFile=/input/${GROUPS} \
+    --groupFile=/input/${GENESET_FILE} \
     --annotation_in_groupTest=${ANNOT} \
     --maxMAF_in_groupTest=${MAX_MAF} \
     --SAIGEOutputFile=/output/saige.step2.additive.group.txt \
@@ -61,7 +61,7 @@ CMD_NONADD="step2_SPAtests.R \
     --varianceRatioFile=/output/null_model.varianceRatio.txt \
     --sparseGRMFile=/output/${GRM} \
     --sparseGRMSampleIDFile=/output/${GRM}.sampleIDs.txt \
-    --groupFile=/input/${GROUPS} \
+    --groupFile=/input/${GENESET_FILE} \
     --annotation_in_groupTest=${ANNOT} \
     --maxMAF_in_groupTest=0.50 \
     --SAIGEOutputFile=/output/saige.step2.nonadditive.group.txt \

@@ -34,9 +34,9 @@ d[, p.value.expt.rec := get_expected_p(p.value.rec)]
 
 # We also add a 'model' column to distinguish between them
 plot_data <- rbind(
-  d[, .(p.value = p.value.add, expt.p = p.value.expt.add, is_causal, model = "Additive")],
+  d[, .(p.value = p.value.add, expt.p = p.value.expt.add, is_causal, model = "Additive [0,1,2]")],
   d[, .(p.value = p.value.dom, expt.p = p.value.expt.dom, is_causal, model = "Non-additive")],
-  d[, .(p.value = p.value.rec, expt.p = p.value.expt.rec, is_causal, model = "Recessive")]
+  d[, .(p.value = p.value.rec, expt.p = p.value.expt.rec, is_causal, model = "Recessive [0,0,2]")]
 )
 
 # 2. Plot side-by-side
@@ -51,7 +51,8 @@ ggplot(plot_data, aes(x = -log10(expt.p), y = -log10(p.value), color = is_causal
     x = "-log10(Expected P-value)",
     y = "-log10(Observed P-value)",
     color = "Is Causal"
-  )
+  ) + 
+  ggtitle("Simulating a completely recessive trait", "variant-level results")
 
 
 

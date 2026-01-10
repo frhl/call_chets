@@ -8,7 +8,7 @@ set -euo pipefail
 CONDA_ENV="pop_sim"
 N_SAMPLES=5000
 N_GENES=100                      # Number of independent genes
-VARIANTS_PER_GENE=200            # Variants per gene
+VARIANTS_PER_GENE=100            # Variants per gene
 GENE_LENGTH_MIN=30000            # Min gene length in bp
 GENE_LENGTH_MAX=40000            # Max gene length in bp
 INTERGENIC_SPACING=1000000       # Space between genes (1 Mb)
@@ -19,7 +19,7 @@ CAUSAL_GENE_FRACTION=0.05        # 7% of genes are causal
 CAUSAL_VARIANTS_PER_GENE=1       # Causal variants per causal gene
 PLOF_MAF_MIN=0.03                # Minimum MAF for pLoF variant selection
 PLOF_MAF_MAX=0.05                # Maximum MAF for pLoF variant selection
-H2=0.04
+H2=0.03
 ARCHITECTURE="recessive"
 SEED=42
 OUTPUT_DIR="../input"
