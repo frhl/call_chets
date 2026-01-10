@@ -8,7 +8,7 @@ VCF="simulated.vcf.gz"
 VCF_NONADD="simulated.nonadditive.vcf.gz"
 GENESET_FILE="genesets_all.txt"
 ANNOT="pLoF,synonymous"
-MAX_MAF="0.001,0.05,0.1"
+MAX_MAF="0.5"
 GRM=$(find output -name "sparseGRM*.mtx" | head -n 1 | xargs basename)
 
 # Create sample list (if needed)
@@ -31,11 +31,13 @@ CMD_ADD="step2_SPAtests.R \
     --groupFile=/input/${GENESET_FILE} \
     --annotation_in_groupTest=${ANNOT} \
     --maxMAF_in_groupTest=${MAX_MAF} \
+    --r.corr=1 \
+    --minGroupMAC_in_BurdenTest=1 \
     --SAIGEOutputFile=/output/saige.step2.additive.group.txt \
     --LOCO=FALSE \
     --is_output_markerList_in_groupTest=TRUE \
     --is_output_moreDetails=TRUE \
-    --is_fastTest=TRUE"
+    --is_fastTest=FALSE"
 
 # Run additive gene-based test
 docker run --rm -v "$(pwd)/input:/input" -v "$(pwd)/output:/output" \
@@ -43,13 +45,15 @@ docker run --rm -v "$(pwd)/input:/input" -v "$(pwd)/output:/output" \
 
 # Clean up temp files
 rm -f output/saige.step2.additive.group.txt.{index,singleAssoc.txt,singleAssoc.txt_temp}
+rm -f output/saige.step2.additive.group.txt_P1Mat_Chunk_*.bin
+rm -f output/saige.step2.additive.group.txt_P2Mat_Chunk_*.bin
 echo "✓ Created: output/saige.step2.additive.group.txt"
 
-# Build command for non-additive SAIGE testing
-# Notes: we use DS instead of GT. Also, that 
-# we use the WEIGHTS in the group file, that we 
+# Build command for non-additive SAIGE testing - pLoF annotation
+# Notes: we use DS instead of GT. Also, that
+# we use the WEIGHTS in the group file, that we
 # have calculated manually.
-CMD_NONADD="step2_SPAtests.R \
+CMD_NONADD_PLOF="step2_SPAtests.R \
     --vcfFile=/input/${VCF_NONADD} \
     --vcfField=DS \
     --chrom=1 \
@@ -62,18 +66,56 @@ CMD_NONADD="step2_SPAtests.R \
     --sparseGRMFile=/output/${GRM} \
     --sparseGRMSampleIDFile=/output/${GRM}.sampleIDs.txt \
     --groupFile=/input/${GENESET_FILE} \
-    --annotation_in_groupTest=${ANNOT} \
+    --annotation_in_groupTest=pLoF \
     --maxMAF_in_groupTest=0.50 \
-    --SAIGEOutputFile=/output/saige.step2.nonadditive.group.txt \
+    --r.corr=1 \
+    --minGroupMAC_in_BurdenTest=1 \
+    --SAIGEOutputFile=/output/saige.step2.nonadditive.group.pLoF.txt \
     --LOCO=FALSE \
     --is_output_markerList_in_groupTest=TRUE \
     --is_output_moreDetails=TRUE \
     --is_fastTest=FALSE"
 
-# Run non-additive gene-based test
+# Run non-additive gene-based test - pLoF
 docker run --rm -v "$(pwd)/input:/input" -v "$(pwd)/output:/output" \
-    wzhou88/saige:0.5.1 ${CMD_NONADD}
+    wzhou88/saige:0.5.1 ${CMD_NONADD_PLOF}
 
 # Clean up temp files
-rm -f output/saige.step2.nonadditive.group.txt.{index,singleAssoc.txt,singleAssoc.txt_temp}
-echo "✓ Created: output/saige.step2.nonadditive.group.txt"
+rm -f output/saige.step2.nonadditive.group.pLoF.txt.{index,singleAssoc.txt,singleAssoc.txt_temp}
+rm -f output/saige.step2.nonadditive.group.pLoF.txt_P1Mat_Chunk_*.bin
+rm -f output/saige.step2.nonadditive.group.pLoF.txt_P2Mat_Chunk_*.bin
+echo "✓ Created: output/saige.step2.nonadditive.group.pLoF.txt"
+
+# Build command for non-additive SAIGE testing - synonymous annotation
+CMD_NONADD_SYN="step2_SPAtests.R \
+    --vcfFile=/input/${VCF_NONADD} \
+    --vcfField=DS \
+    --chrom=1 \
+    --minMAF=0 \
+    --minMAC=0.5 \
+    --AlleleOrder=ref-first \
+    --sampleFile=/input/sample_list.txt \
+    --GMMATmodelFile=/output/null_model.rda \
+    --varianceRatioFile=/output/null_model.varianceRatio.txt \
+    --sparseGRMFile=/output/${GRM} \
+    --sparseGRMSampleIDFile=/output/${GRM}.sampleIDs.txt \
+    --groupFile=/input/${GENESET_FILE} \
+    --annotation_in_groupTest=synonymous \
+    --maxMAF_in_groupTest=0.50 \
+    --r.corr=1 \
+    --minGroupMAC_in_BurdenTest=1 \
+    --SAIGEOutputFile=/output/saige.step2.nonadditive.group.synonymous.txt \
+    --LOCO=FALSE \
+    --is_output_markerList_in_groupTest=TRUE \
+    --is_output_moreDetails=TRUE \
+    --is_fastTest=FALSE"
+
+# Run non-additive gene-based test - synonymous
+docker run --rm -v "$(pwd)/input:/input" -v "$(pwd)/output:/output" \
+    wzhou88/saige:0.5.1 ${CMD_NONADD_SYN}
+
+# Clean up temp files
+rm -f output/saige.step2.nonadditive.group.synonymous.txt.{index,singleAssoc.txt,singleAssoc.txt_temp}
+rm -f output/saige.step2.nonadditive.group.synonymous.txt_P1Mat_Chunk_*.bin
+rm -f output/saige.step2.nonadditive.group.synonymous.txt_P2Mat_Chunk_*.bin
+echo "✓ Created: output/saige.step2.nonadditive.group.synonymous.txt"

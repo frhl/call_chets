@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Path to recode binary
-RECODE=../bin/recode
-INPUT=trio.vcf
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RECODE="${SCRIPT_DIR}/../bin/recode"
+INPUT="${SCRIPT_DIR}/trio.vcf"
 
 # Ensure binary exists
 if [ ! -f "$RECODE" ]; then

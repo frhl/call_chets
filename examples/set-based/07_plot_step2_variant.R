@@ -5,6 +5,12 @@ library(data.table)
 library(bravastring) # from devtools::install_github("frhl/bravastring")
 setwd("~/Projects/06_call_chets/call_chets/examples/set-based/")
 
+# for pretty colors
+col_palette <- c(
+  "synonymous" = "#2ca02c",
+  "pLoF" = "#d62728"
+)
+
 # get non-additive (dominance deviation) results
 cols_to_keep <- c("MarkerID", "BETA", "SE", "Tstat", "var", "p.value")
 d_nonadd <- fread("output/saige.step2.nonadditive.variant.txt")
@@ -34,23 +40,23 @@ d[, p.value.expt.rec := get_expected_p(p.value.rec)]
 
 # We also add a 'model' column to distinguish between them
 plot_data <- rbind(
-  d[, .(p.value = p.value.add, expt.p = p.value.expt.add, is_causal, model = "Additive [0,1,2]")],
-  d[, .(p.value = p.value.dom, expt.p = p.value.expt.dom, is_causal, model = "Non-additive")],
-  d[, .(p.value = p.value.rec, expt.p = p.value.expt.rec, is_causal, model = "Recessive [0,0,2]")]
+  d[, .(p.value = p.value.add, expt.p = p.value.expt.add, is_causal, annotation, model = "Additive [0,1,2]")],
+  d[, .(p.value = p.value.dom, expt.p = p.value.expt.dom, is_causal, annotation, model = "Non-additive")],
+  d[, .(p.value = p.value.rec, expt.p = p.value.expt.rec, is_causal, annotation, model = "Recessive [0,0,2]")]
 )
 
 # 2. Plot side-by-side
-ggplot(plot_data, aes(x = -log10(expt.p), y = -log10(p.value), color = is_causal)) +
+ggplot(plot_data, aes(x = -log10(expt.p), y = -log10(p.value), color = annotation)) +
   geom_point(data=plot_data[is_causal==FALSE], size=2.5) +
   geom_point(data=plot_data[is_causal==TRUE], size=2.5) +
   geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "black") +
-  scale_color_manual(values = c("FALSE" = "#999999", "TRUE" = "#E69F00")) +
+  scale_color_manual(values=col_palette) +
   facet_wrap(~model) + 
   theme_bw() +
   labs(
     x = "-log10(Expected P-value)",
     y = "-log10(Observed P-value)",
-    color = "Is Causal"
+    color = "Annotation"
   ) + 
   ggtitle("Simulating a completely recessive trait", "variant-level results")
 

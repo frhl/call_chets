@@ -13,12 +13,14 @@ OUTPUT_NONADD="input/simulated.nonadditive.vcf.gz"
 
 # --min-het-count ${MIN_HET_COUNT} \
 # Convert to nonadditive encoding using Docker 
-docker run --rm -v "$(pwd):/data" fhlassen/call_chets:1.0.11 \
+# note: need to --scale-per-variant if only interested in variant-level results (faster)
+docker run --rm -v "$(pwd):/data" fhlassen/call_chets:1.0.13 \
     ./bin/recode \
         --input "/data/${INPUT}" \
         --mode nonadditive \
         --min-hom-count ${MIN_HOM_COUNT} \
-        --scale-per-variant \
+        --max-maf 0.05 \
+        --scale-globally \
         --set-variant-id \
         --all-info \
     | bgzip > "${OUTPUT_NONADD}"
@@ -32,7 +34,7 @@ INPUT="input/simulated.vcf.gz"
 OUTPUT_RECESSIVE="input/simulated.recessive.vcf.gz"
 
 # Encode [0,1,2]->[0,0,2] using Docker 
-docker run --rm -v "$(pwd):/data" fhlassen/call_chets:1.0.11 \
+docker run --rm -v "$(pwd):/data" fhlassen/call_chets:1.0.13 \
     ./bin/recode \
         --input "/data/${INPUT}" \
         --mode recessive \

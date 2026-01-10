@@ -251,6 +251,22 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
   params["Mode"] = mode;
   params["Min Hom Count"] = std::to_string(minHomCount);
   params["Min Het Count"] = std::to_string(minHetCount);
+  if (minAAC >= 0)
+    params["Min AAC"] = std::to_string(minAAC);
+  if (maxAAC != std::numeric_limits<int>::max())
+    params["Max AAC"] = std::to_string(maxAAC);
+  if (minMAC >= 0)
+    params["Min MAC"] = std::to_string(minMAC);
+  if (maxMAC != std::numeric_limits<int>::max())
+    params["Max MAC"] = std::to_string(maxMAC);
+  if (minAAF >= 0.0)
+    params["Min AAF"] = std::to_string(minAAF);
+  if (maxAAF != std::numeric_limits<double>::max())
+    params["Max AAF"] = std::to_string(maxAAF);
+  if (minMAF >= 0.0)
+    params["Min MAF"] = std::to_string(minMAF);
+  if (maxMAF != std::numeric_limits<double>::max())
+    params["Max MAF"] = std::to_string(maxMAF);
   params["Scale Variant"] = scalePerVariant ? "Yes" : "No";
   params["Scale Global"] = scaleGlobally ? "Yes" : "No";
   params["Scale Factor"] = std::to_string(scalingFactor);
@@ -494,6 +510,527 @@ void printHeader(const bcf_hdr_t *hdr,
   std::cout << "\n";
 }
 
+// RAII Wrappers for HTSlib resources
+struct HtsFileDeleter {
+  void operator()(htsFile *fp) const {
+    if (fp)
+      bcf_close(fp);
+  }
+};
+using HtsFileUPtr = std::unique_ptr<htsFile, HtsFileDeleter>;
+
+struct BcfHdrDeleter {
+  void operator()(bcf_hdr_t *hdr) const {
+    if (hdr)
+      bcf_hdr_destroy(hdr);
+  }
+};
+using BcfHdrUPtr = std::unique_ptr<bcf_hdr_t, BcfHdrDeleter>;
+
+struct Bcf1Deleter {
+  void operator()(bcf1_t *rec) const {
+    if (rec)
+      bcf_destroy(rec);
+  }
+};
+using Bcf1UPtr = std::unique_ptr<bcf1_t, Bcf1Deleter>;
+
+// Helper to safely open VCF
+HtsFileUPtr openVcf(const std::string &path, const char *mode = "r") {
+  HtsFileUPtr fp(bcf_open(path.c_str(), mode));
+  if (!fp) {
+    throw std::runtime_error("Cannot open VCF/BCF file: " + path);
+  }
+  return fp;
+}
+
+// Processing stats structure
+struct ProcessingStats {
+  long totalVariants = 0;
+  long keptVariants = 0;
+  int countVariantsWithoutHomRef = 0;
+  int countVariantsWithoutHomAlt = 0;
+  int countVariantsWithoutHet = 0;
+  int discardedVariantsCount = 0;
+  int lowVarianceVariantsCount = 0;
+  long roundedDosageCount = 0;
+  long haploidWarningCount = 0;
+  int countVariantsMinAAC = 0;
+  int countVariantsMaxAAC = 0;
+  int countVariantsMinMAC = 0;
+  int countVariantsMaxMAC = 0;
+  int countVariantsMinAAF = 0;
+  int countVariantsMaxAAF = 0;
+  int countVariantsMinMAF = 0;
+  int countVariantsMaxMAF = 0;
+};
+
+// Filter constants
+constexpr int WARNING_LIMIT = 5;
+constexpr double LOW_VARIANCE_THRESHOLD = 0.0001;
+constexpr double EPSILON = 1e-8;
+
+struct VariantFilterParams {
+  int minHomCount;
+  int minHetCount;
+  int minAAC;
+  int maxAAC;
+  int minMAC;
+  int maxMAC;
+  double minAAF;
+  double maxAAF;
+  double minMAF;
+  double maxMAF;
+  const std::string &mode;
+};
+
+// --- Logic Components ---
+
+// Check if variant passes frequency/count filters
+bool passesFrequencyFilters(int aac_count, int ref_count,
+                            const VariantFilterParams &params,
+                            ProcessingStats &stats) {
+  int total_alleles = aac_count + ref_count;
+  if (total_alleles == 0)
+    return false; // Should not happen for non-missing data
+
+  int mac_count = std::min(aac_count, ref_count);
+  double aaf_val = (double)aac_count / total_alleles;
+  double maf_val = (double)mac_count / total_alleles;
+
+  if ((params.minAAC >= 0 && aac_count < params.minAAC)) {
+    stats.countVariantsMinAAC++;
+    return false;
+  }
+  if (params.maxAAC != std::numeric_limits<int>::max() &&
+      aac_count > params.maxAAC) {
+    stats.countVariantsMaxAAC++;
+    return false;
+  }
+  if ((params.minMAC >= 0 && mac_count < params.minMAC)) {
+    stats.countVariantsMinMAC++;
+    return false;
+  }
+  if (params.maxMAC != std::numeric_limits<int>::max() &&
+      mac_count > params.maxMAC) {
+    stats.countVariantsMaxMAC++;
+    return false;
+  }
+  if ((params.minAAF >= 0.0 && aaf_val < params.minAAF)) {
+    stats.countVariantsMinAAF++;
+    return false;
+  }
+  if (params.maxAAF != std::numeric_limits<double>::max() &&
+      aaf_val > params.maxAAF) {
+    stats.countVariantsMaxAAF++;
+    return false;
+  }
+  if ((params.minMAF >= 0.0 && maf_val < params.minMAF)) {
+    stats.countVariantsMinMAF++;
+    return false;
+  }
+  if (params.maxMAF != std::numeric_limits<double>::max() &&
+      maf_val > params.maxMAF) {
+    stats.countVariantsMaxMAF++;
+    return false;
+  }
+
+  return true;
+}
+
+// Check genotype counts (hom/het) logic
+bool passesGenotypeCountFilters(bcf_hdr_t *hdr, bcf1_t *rec, int aa_count,
+                                int Aa_count, int AA_count,
+                                const VariantFilterParams &params,
+                                ProcessingStats &stats) {
+  if (params.mode != "dominance")
+    return true;
+
+  if (aa_count < params.minHomCount) {
+    stats.countVariantsWithoutHomRef++;
+    if (stats.countVariantsWithoutHomRef <= WARNING_LIMIT) {
+      std::string varId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
+                          std::to_string(rec->pos + 1) + ":" +
+                          rec->d.allele[0] + ":" +
+                          (rec->n_allele > 1 ? rec->d.allele[1] : ".");
+      std::cerr << "variant '" << varId << "' has " << aa_count
+                << " (aa) homozygous alleles (min required: "
+                << params.minHomCount << " for minor hom). Skipping..\n";
+    } else if (stats.countVariantsWithoutHomRef == WARNING_LIMIT + 1) {
+      std::cerr << "(truncated...)" << std::endl;
+    }
+    return false;
+  }
+
+  if (AA_count < params.minHomCount) {
+    stats.countVariantsWithoutHomAlt++;
+    if (stats.countVariantsWithoutHomAlt <= WARNING_LIMIT) {
+      std::string varId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
+                          std::to_string(rec->pos + 1) + ":" +
+                          rec->d.allele[0] + ":" +
+                          (rec->n_allele > 1 ? rec->d.allele[1] : ".");
+      std::cerr << "variant '" << varId << "' has " << AA_count
+                << " (AA) homozygous alleles (min required: "
+                << params.minHomCount << " for minor hom). Skipping..\n";
+    } else if (stats.countVariantsWithoutHomAlt == WARNING_LIMIT + 1) {
+      std::cerr << "(truncated...)" << std::endl;
+    }
+    return false;
+  }
+
+  if (Aa_count < params.minHetCount) {
+    stats.countVariantsWithoutHet++;
+    if (stats.countVariantsWithoutHet <= WARNING_LIMIT) {
+      std::string varId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
+                          std::to_string(rec->pos + 1) + ":" +
+                          rec->d.allele[0] + ":" +
+                          (rec->n_allele > 1 ? rec->d.allele[1] : ".");
+      std::cerr << "variant '" << varId << "' has " << Aa_count
+                << " heterozygotes (min required: " << params.minHetCount
+                << "). Skipping..\n";
+    } else if (stats.countVariantsWithoutHet == WARNING_LIMIT + 1) {
+      std::cerr << "(truncated...)" << std::endl;
+    }
+    return false;
+  }
+
+  return true;
+}
+
+// Calculate Dominance Dosages
+struct DominanceDosages {
+  double aa, Aa, AA;
+};
+
+DominanceDosages calculateRawDominance(double r, double h, double a) {
+  return {-h * a, 2 * a * r, -h * r};
+}
+
+double scaleDosage(double val, double minVal, double maxVal) {
+  return 2.0 * ((val - minVal) / (maxVal - minVal));
+}
+
+// Main logic for processing a single sample's dosage
+double computeSampleDosage(int geno, const std::string &mode, double h,
+                           double a, double r, double localMin, double localMax,
+                           bool scalingEnabled, double scalingFactor) {
+  double dosage = 0.0;
+  if (mode == "dominance") {
+    if (geno == 0)
+      dosage = -h * a;
+    else if (geno == 1)
+      dosage = 2 * a * r;
+    else if (geno == 2)
+      dosage = -h * r;
+
+    if (scalingEnabled) {
+      dosage = scaleDosage(dosage, localMin, localMax);
+      if (dosage < 0)
+        dosage = 0;
+      else if (dosage > 2 + EPSILON) {
+        throw std::runtime_error("Dosage value " + std::to_string(dosage) +
+                                 " exceeds 2 + epsilon");
+      }
+    }
+  } else if (mode == "recessive") {
+    if (geno == 0 || geno == 1)
+      dosage = 0.0;
+    else if (geno == 2)
+      dosage = 2.0;
+  }
+
+  if (scalingFactor != 0 && scalingFactor != 1.0) {
+    dosage *= scalingFactor;
+  }
+  return dosage;
+}
+
+void processVariant(
+    bcf_hdr_t *hdr, bcf1_t *rec, const std::string &mode, bool allInfo,
+    bool scalePerVariant, bool scaleGlobally, bool scaleByGroup,
+    bool setVariantId, double scalingFactor, double globalMinDomDosage,
+    double globalMaxDomDosage,
+    const std::map<std::string, std::pair<double, double>> &groupDosages,
+    const std::map<std::string, std::string> &groupMap,
+    const VariantFilterParams &filterParams, ProcessingStats &stats,
+    std::vector<VariantEncodingExample> &encodingExamples, bool &previewPrinted,
+    int MAX_EXAMPLES) {
+
+  // Get Genotypes/Dosages
+  int *gt_arr = NULL, ngt_arr = 0;
+  float *ds_arr = NULL;
+  int nds_arr = 0;
+
+  bool has_gt_format = hasFormat(hdr, "GT");
+  bool has_ds_format = hasFormat(hdr, "DS");
+
+  int ngt = has_gt_format ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
+  int nds = has_ds_format
+                ? bcf_get_format_float(hdr, rec, "DS", &ds_arr, &nds_arr)
+                : 0;
+
+  bool has_gt = has_gt_format && ngt >= 0;
+  bool has_ds = has_ds_format && nds >= 0;
+
+  if (!has_gt && !has_ds) {
+    free(gt_arr);
+    free(ds_arr);
+    return;
+  }
+
+  int n_samples = bcf_hdr_nsamples(hdr);
+  int aa_count = 0, Aa_count = 0, AA_count = 0, non_missing_count = 0;
+
+  // First pass over samples: calculate stats
+  for (int i = 0; i < n_samples; ++i) {
+    int *gt_ptr = (has_gt && gt_arr) ? gt_arr + i * 2 : NULL;
+    float ds_value = (has_ds && ds_arr) ? ds_arr[i] : 0.0f;
+    processSampleGenotypes(gt_ptr, ds_value, has_gt, has_ds, aa_count, Aa_count,
+                           AA_count, non_missing_count,
+                           stats.roundedDosageCount);
+  }
+
+  // Check genotype count filters
+  if (!passesGenotypeCountFilters(hdr, rec, aa_count, Aa_count, AA_count,
+                                  filterParams, stats)) {
+    free(gt_arr);
+    free(ds_arr);
+    return;
+  }
+
+  if (non_missing_count == 0) {
+    free(gt_arr);
+    free(ds_arr);
+    return;
+  }
+
+  // Calculate stats for frequency filters
+  int aac_count = Aa_count + 2 * AA_count;
+  int ref_count = 2 * aa_count + Aa_count;
+
+  if (!passesFrequencyFilters(aac_count, ref_count, filterParams, stats)) {
+    free(gt_arr);
+    free(ds_arr);
+    return;
+  }
+
+  // Passed all filters!
+  stats.keptVariants++;
+
+  std::string variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
+                          std::to_string(rec->pos + 1) + ":" +
+                          rec->d.allele[0] + ":" + rec->d.allele[1];
+
+  double r = 0.0, h = 0.0, a = 0.0;
+  if (mode == "dominance" || allInfo) {
+    r = static_cast<double>(aa_count) / non_missing_count;
+    h = static_cast<double>(Aa_count) / non_missing_count;
+    a = static_cast<double>(AA_count) / non_missing_count;
+  }
+
+  double localMin = 0.0, localMax = 0.0;
+  std::string group;
+  DominanceDosages rawDom = {0, 0, 0};
+
+  if (mode == "dominance") {
+    rawDom = calculateRawDominance(r, h, a);
+
+    if (scaleByGroup && groupMap.find(variantId) == groupMap.end()) {
+      if (stats.discardedVariantsCount < WARNING_LIMIT) {
+        std::cerr << "Warning: Variant '" << variantId
+                  << "' not found in group map. Discarding.\n";
+      }
+      stats.discardedVariantsCount++;
+      free(gt_arr);
+      free(ds_arr);
+      return;
+    }
+
+    localMin = globalMinDomDosage;
+    localMax = globalMaxDomDosage;
+
+    if (scalePerVariant) {
+      localMin = std::min({rawDom.aa, rawDom.Aa, rawDom.AA});
+      localMax = std::max({rawDom.aa, rawDom.Aa, rawDom.AA});
+    } else if (scaleByGroup) {
+      group = groupMap.at(variantId);
+      localMin = groupDosages.at(group).first;
+      localMax = groupDosages.at(group).second;
+    }
+  }
+
+  if (setVariantId) {
+    variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
+                std::to_string(rec->pos + 1) + ":" + rec->d.allele[0] + ":" +
+                (rec->n_allele > 1 ? rec->d.allele[1] : ".");
+  }
+
+  // --- Preview Logic ---
+  if (mode == "dominance" && !previewPrinted &&
+      encodingExamples.size() < MAX_EXAMPLES) {
+    VariantEncodingExample ex;
+    ex.variantId = variantId;
+    ex.r = r;
+    ex.h = h;
+    ex.a = a;
+    ex.raw_aa = rawDom.aa;
+    ex.raw_Aa = rawDom.Aa;
+    ex.raw_AA = rawDom.AA;
+    ex.variantMin = localMin;
+    ex.variantMax = localMax;
+
+    bool scaling = scalePerVariant || scaleGlobally || scaleByGroup;
+    if (scaling) {
+      ex.scaled_aa = scaleDosage(rawDom.aa, localMin, localMax);
+      ex.scaled_Aa = scaleDosage(rawDom.Aa, localMin, localMax);
+      ex.scaled_AA = scaleDosage(rawDom.AA, localMin, localMax);
+    } else {
+      ex.scaled_aa = rawDom.aa;
+      ex.scaled_Aa = rawDom.Aa;
+      ex.scaled_AA = rawDom.AA;
+    }
+    if (scalingFactor != 0 && scalingFactor != 1.0) {
+      ex.scaled_aa *= scalingFactor;
+      ex.scaled_Aa *= scalingFactor;
+      ex.scaled_AA *= scalingFactor;
+    }
+    encodingExamples.push_back(ex);
+    // (Check for printing preview done in caller or periodically)
+  }
+
+  // --- Output ---
+  std::cout << bcf_hdr_id2name(hdr, rec->rid) << "\t" << (rec->pos + 1) << "\t"
+            << variantId << "\t" << rec->d.allele[0] << "\t";
+  if (rec->n_allele > 1)
+    std::cout << rec->d.allele[1];
+  else
+    std::cout << ".";
+  std::cout << "\t.\t.\tAC=" << aac_count << ";AN=" << 2 * non_missing_count;
+
+  if (scalePerVariant)
+    std::cout << ";variantMinDomDosage=" << localMin
+              << ";variantMaxDomDosage=" << localMax;
+  else if (scaleGlobally)
+    std::cout << ";globalMinDomDosage=" << localMin
+              << ";globalMaxDomDosage=" << localMax;
+  else if (scaleByGroup)
+    std::cout << ";groupMinDomDosage=" << localMin
+              << ";groupMaxDomDosage=" << localMax << ";group=" << group;
+
+  if (allInfo)
+    std::cout << ";r=" << r << ";h=" << h << ";a=" << a;
+
+  // Check low variance
+  bool scaling = scalePerVariant || scaleGlobally || scaleByGroup;
+  if (mode == "dominance" && scaling) {
+    double s_aa = scaleDosage(rawDom.aa, localMin, localMax);
+    double s_Aa = scaleDosage(rawDom.Aa, localMin, localMax);
+    double s_AA = scaleDosage(rawDom.AA, localMin, localMax);
+    if (s_aa < 0)
+      s_aa = 0;
+    if (s_Aa < 0)
+      s_Aa = 0;
+    if (s_AA < 0)
+      s_AA = 0;
+
+    double diff1 = std::abs(s_aa - s_Aa);
+    double diff2 = std::abs(s_aa - s_AA);
+    double diff3 = std::abs(s_Aa - s_AA);
+    double minDiff = std::min({diff1, diff2, diff3});
+    if (minDiff < LOW_VARIANCE_THRESHOLD) {
+      stats.lowVarianceVariantsCount++;
+      if (stats.lowVarianceVariantsCount <= WARNING_LIMIT) {
+        std::cerr
+            << "Warning: Variant '" << variantId
+            << "' has genotypes with very similar scaled dosages (min diff="
+            << minDiff << ").\n";
+      }
+    }
+  }
+
+  std::cout << "\tDS";
+
+  // Build output line
+  std::string output_line;
+  output_line.reserve(n_samples * 10);
+
+  for (int i = 0; i < n_samples; ++i) {
+    double dosage = 0.0;
+    bool is_missing = false;
+    int *gt_ptr = has_gt ? gt_arr + i * 2 : NULL;
+    float ds_value = has_ds ? ds_arr[i] : 0.0f;
+
+    if (has_gt) {
+      int allele1_missing = bcf_gt_is_missing(gt_ptr[0]);
+      int allele2_missing = bcf_gt_is_missing(gt_ptr[1]);
+      if (allele1_missing && allele2_missing) {
+        is_missing = true;
+      } else if (allele1_missing || allele2_missing) {
+        // Haploid
+        dosage = 0.0;
+        stats.haploidWarningCount++;
+        if (stats.haploidWarningCount <= 5) {
+          std::cerr << "Warning: Haploid genotype sample " << i + 1 << " at "
+                    << variantId << ". Setting to 0.\n";
+        }
+      } else {
+        int g1 = bcf_gt_allele(gt_ptr[0]);
+        int g2 = bcf_gt_allele(gt_ptr[1]);
+        int geno = -1;
+        if (g1 == 0 && g2 == 0)
+          geno = 0;
+        else if (g1 != g2)
+          geno = 1;
+        else if (g1 > 0 && g2 > 0)
+          geno = 2;
+
+        if (geno >= 0) {
+          try {
+            dosage = computeSampleDosage(geno, mode, h, a, r, localMin,
+                                         localMax, scaling, scalingFactor);
+          } catch (const std::exception &e) {
+            std::cerr << "Error: " << e.what() << std::endl;
+            exit(1);
+          }
+        }
+      }
+    } else if (has_ds) {
+      if (std::isnan(ds_value)) {
+        is_missing = true;
+      } else {
+        int geno = std::round(ds_value);
+        if (geno >= 0 && geno <= 2) {
+          try {
+            dosage = computeSampleDosage(geno, mode, h, a, r, localMin,
+                                         localMax, scaling, scalingFactor);
+          } catch (const std::exception &e) {
+            std::cerr << "Error: " << e.what() << std::endl;
+            exit(1);
+          }
+        }
+      }
+    } else {
+      is_missing = true;
+    }
+
+    output_line += '\t';
+    if (is_missing) {
+      output_line += '.';
+    } else if (mode == "recessive" && scalingFactor == 1.0) {
+      output_line += (dosage == 0.0) ? '0' : '2';
+    } else {
+      char buf[32];
+      snprintf(buf, sizeof(buf), "%.6g", dosage);
+      output_line += buf;
+    }
+  }
+
+  std::cout << output_line << '\n';
+
+  free(gt_arr);
+  free(ds_arr);
+}
+
 void processVcfFile(
     htsFile *fp, bcf_hdr_t *hdr, const std::string &mode,
     double globalMinDomDosage, double globalMaxDomDosage, bool allInfo,
@@ -504,493 +1041,65 @@ void processVcfFile(
     std::set<std::string> &chromosomes, int minHomCount, int minHetCount,
     int minAAC, int maxAAC, int minMAC, int maxMAC, double minAAF,
     double maxAAF, double minMAF, double maxMAF) {
-  bcf1_t *rec = bcf_init();
-  int *gt_arr = NULL, ngt_arr = 0;
-  float *ds_arr = NULL;
-  int nds_arr = 0;
-  int n_samples = bcf_hdr_nsamples(hdr);
-  const double epsilon = 1e-8;
-  int countVariantsWithoutHomRef = 0;
-  int countVariantsWithoutHomAlt = 0;
-  int countVariantsWithoutHet = 0;
-  const int limit = 5;
-  int discardedVariantsCount = 0;
-  const int warningLimit = 5;
-  int lowVarianceVariantsCount = 0;
-  long totalVariants = 0;
-  long keptVariants = 0;
-  const double lowVarianceThreshold =
-      0.0001; // Warn if any two genotype dosages differ by less than this
-  long roundedDosageCount = 0;
-  long haploidWarningCount = 0;
 
-  // Variables for output preview
+  Bcf1UPtr rec(bcf_init());
+  ProcessingStats stats;
+  VariantFilterParams filterParams{minHomCount, minHetCount, minAAC, maxAAC,
+                                   minMAC,      maxMAC,      minAAF, maxAAF,
+                                   minMAF,      maxMAF,      mode};
+
+  // Preview Logic
   std::vector<VariantEncodingExample> encodingExamples;
   bool previewPrinted = false;
   const int MAX_EXAMPLES = 5;
 
-  bool has_gt_format = hasFormat(hdr, "GT");
-  bool has_ds_format = hasFormat(hdr, "DS");
-
-  // Track processing time (pass2_start is already defined in main)
   auto processing_start_time = std::chrono::steady_clock::now();
 
-  while (bcf_read(fp, hdr, rec) == 0) {
-    totalVariants++;
-    bcf_unpack(rec, BCF_UN_STR);
-
-    // Collect chromosome names as we process
+  while (bcf_read(fp, hdr, rec.get()) == 0) {
+    stats.totalVariants++;
+    bcf_unpack(rec.get(), BCF_UN_STR);
     chromosomes.insert(bcf_hdr_id2name(hdr, rec->rid));
 
-    int ngt =
-        has_gt_format ? bcf_get_genotypes(hdr, rec, &gt_arr, &ngt_arr) : 0;
-    int nds = has_ds_format
-                  ? bcf_get_format_float(hdr, rec, "DS", &ds_arr, &nds_arr)
-                  : 0;
-
-    // Per-variant flags for successful retrieval
-    bool has_gt = has_gt_format && ngt >= 0;
-    bool has_ds = has_ds_format && nds >= 0;
-
-    if (!has_gt && !has_ds)
-      continue;
-
-    // Progress logging every 10000 variants
-    if (keptVariants > 0 && keptVariants % 10000 == 0) {
+    // Progress logging
+    if (stats.keptVariants > 0 && stats.keptVariants % 10000 == 0) {
       auto now = std::chrono::steady_clock::now();
       auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
           now - processing_start_time);
-      int rate = elapsed.count() > 0 ? keptVariants / elapsed.count() : 0;
-      int discarded = discardedVariantsCount + countVariantsWithoutHomRef +
-                      countVariantsWithoutHomAlt + countVariantsWithoutHet;
-      std::cerr << "\r    [Processing] " << keptVariants
+      int rate = elapsed.count() > 0 ? stats.keptVariants / elapsed.count() : 0;
+      int discarded =
+          stats.discardedVariantsCount + stats.countVariantsWithoutHomRef +
+          stats.countVariantsWithoutHomAlt + stats.countVariantsWithoutHet;
+      std::cerr << "\r    [Processing] " << stats.keptVariants
                 << " variants written (" << elapsed.count() << "s elapsed, ~"
                 << rate << " var/sec, " << discarded << " discarded)"
                 << std::flush;
     }
 
-    int aa_count = 0, Aa_count = 0, AA_count = 0, non_missing_count = 0;
-    for (int i = 0; i < n_samples; ++i) {
-      int *gt_ptr = (has_gt && gt_arr) ? gt_arr + i * 2 : NULL;
-      float ds_value = (has_ds && ds_arr) ? ds_arr[i] : 0.0f;
+    processVariant(hdr, rec.get(), mode, allInfo, scalePerVariant,
+                   scaleGlobally, scaleByGroup, setVariantId, scalingFactor,
+                   globalMinDomDosage, globalMaxDomDosage, groupDosages,
+                   groupMap, filterParams, stats, encodingExamples,
+                   previewPrinted, MAX_EXAMPLES);
 
-      processSampleGenotypes(gt_ptr, ds_value, has_gt, has_ds, aa_count,
-                             Aa_count, AA_count, non_missing_count,
-                             roundedDosageCount);
-    }
-
-    // For dominance mode, we need at least minHomCount homozygous alternates
-    // (minor allele) and minHetCount heterozygotes.
-    // Also check homozygous reference count if we are being strict about
-    // "minor" homozygous. Actually, the original logic was: min(aa, AA) <
-    // minHomCount. This implies we need BOTH aa and AA to be >= minHomCount?
-    // "minor homozygous alleles required... Applies to min(AA,aa)"
-    // So if aa < minHomCount -> fail. If AA < minHomCount -> fail. (Assuming
-    // dominance mode).
-
-    // Check if aa count is sufficient
-    if (mode == "dominance" && aa_count < minHomCount) {
-      countVariantsWithoutHomRef++;
-      if (countVariantsWithoutHomRef <= limit) {
-        std::string varId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
-                            std::to_string(rec->pos + 1) + ":" +
-                            rec->d.allele[0] + ":" +
-                            (rec->n_allele > 1 ? rec->d.allele[1] : ".");
-        std::cerr << "variant '" << varId << "' has " << aa_count
-                  << " (aa) homozygous alleles (min required: " << minHomCount
-                  << " for minor hom). Skipping..\n";
-      } else if (countVariantsWithoutHomRef == limit + 1) {
-        std::cerr << "      (truncated...)" << std::endl;
-      }
-      continue;
-    }
-
-    // Check if AA count is sufficient
-    if (mode == "dominance" && AA_count < minHomCount) {
-      countVariantsWithoutHomAlt++;
-      if (countVariantsWithoutHomAlt <= limit) {
-        std::string varId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
-                            std::to_string(rec->pos + 1) + ":" +
-                            rec->d.allele[0] + ":" +
-                            (rec->n_allele > 1 ? rec->d.allele[1] : ".");
-        std::cerr << "variant '" << varId << "' has " << AA_count
-                  << " (AA) homozygous alleles (min required: " << minHomCount
-                  << " for minor hom). Skipping..\n";
-      } else if (countVariantsWithoutHomAlt == limit + 1) {
-        std::cerr << "      (truncated...)" << std::endl;
-      }
-      continue;
-    }
-
-    // Check for minimum heterozygote count (applies to dominance mode)
-    if (mode == "dominance" && Aa_count < minHetCount) {
-      countVariantsWithoutHet++;
-      if (countVariantsWithoutHet <= limit) {
-        std::string varId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
-                            std::to_string(rec->pos + 1) + ":" +
-                            rec->d.allele[0] + ":" +
-                            (rec->n_allele > 1 ? rec->d.allele[1] : ".");
-        std::cerr << "variant '" << varId << "' has " << Aa_count
-                  << " heterozygotes (min required: " << minHetCount
-                  << "). Skipping..\n";
-      } else if (countVariantsWithoutHet == limit + 1) {
-        std::cerr << "      (truncated...)" << std::endl;
-      }
-      continue;
-    }
-
-    // Skip variants with no non-missing samples
-    if (non_missing_count == 0)
-      continue;
-
-    keptVariants++;
-
-    std::string variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
-                            std::to_string(rec->pos + 1) + ":" +
-                            rec->d.allele[0] + ":" + rec->d.allele[1];
-
-    // Only calculate frequencies and dominance dosages if needed
-    double r = 0.0, h = 0.0, a = 0.0;
-    double dom_dosage_aa = 0.0, dom_dosage_Aa = 0.0, dom_dosage_AA = 0.0;
-    double localMinDomDosage = 0.0, localMaxDomDosage = 0.0;
-    std::string group;
-
-    if (mode == "dominance" || allInfo) {
-      r = static_cast<double>(aa_count) / non_missing_count;
-      h = static_cast<double>(Aa_count) / non_missing_count;
-      a = static_cast<double>(AA_count) / non_missing_count;
-    }
-
-    // Calculate allele counts and frequencies for filtering
-    int total_alleles = 2 * non_missing_count;
-    int aac_count = Aa_count + 2 * AA_count;
-    int ref_count = 2 * aa_count + Aa_count;
-    int mac_count = std::min(aac_count, ref_count);
-    double aaf_val = (double)aac_count / total_alleles;
-    double maf_val = (double)mac_count / total_alleles;
-    // std::cerr << "Debug: Counts calculated. AAC=" << aac_count << " MAC=" <<
-    // mac_count << std::endl;
-
-    // Apply filters
-    if ((minAAC >= 0 && aac_count < minAAC) ||
-        (maxAAC != std::numeric_limits<int>::max() && aac_count > maxAAC))
-      continue;
-    if ((minMAC >= 0 && mac_count < minMAC) ||
-        (maxMAC != std::numeric_limits<int>::max() && mac_count > maxMAC))
-      continue;
-    if ((minAAF >= 0.0 && aaf_val < minAAF) ||
-        (maxAAF != std::numeric_limits<double>::max() && aaf_val > maxAAF))
-      continue;
-    if ((minMAF >= 0.0 && maf_val < minMAF) ||
-        (maxMAF != std::numeric_limits<double>::max() && maf_val > maxMAF))
-      continue;
-
-    if (mode == "dominance") {
-      dom_dosage_aa = -h * a;
-      dom_dosage_Aa = 2 * a * r;
-      dom_dosage_AA = -h * r;
-
-      if (scaleByGroup && groupMap.find(variantId) == groupMap.end()) {
-        if (discardedVariantsCount < warningLimit) {
-          std::cerr << "Warning: Variant '" << variantId
-                    << "' not found in group map. Discarding.\n";
-        }
-        discardedVariantsCount++;
-        continue;
-      }
-
-      localMinDomDosage = globalMinDomDosage;
-      localMaxDomDosage = globalMaxDomDosage;
-
-      if (scalePerVariant) {
-        // For per-variant scaling, calculate local min/max on the fly
-        localMinDomDosage =
-            std::min({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
-        localMaxDomDosage =
-            std::max({dom_dosage_aa, dom_dosage_Aa, dom_dosage_AA});
-      } else if (scaleByGroup && groupMap.find(variantId) != groupMap.end()) {
-        // For group-based scaling, use group-specific min/max
-        std::string groupName = groupMap.at(variantId);
-        localMinDomDosage = groupDosages.at(groupName).first;
-        localMaxDomDosage = groupDosages.at(groupName).second;
-        group = groupName;
-      }
-      // else: scaleGlobally uses globalMinDomDosage/globalMaxDomDosage (already
-      // set above)
-    }
-
-    if (setVariantId) {
-      variantId = std::string(bcf_hdr_id2name(hdr, rec->rid)) + ":" +
-                  std::to_string(rec->pos + 1) + ":" + rec->d.allele[0] + ":" +
-                  (rec->n_allele > 1 ? rec->d.allele[1] : ".");
-    }
-
-    // Collection for encoding preview
     if (mode == "dominance" && !previewPrinted &&
-        encodingExamples.size() < MAX_EXAMPLES) {
-      VariantEncodingExample ex;
-      ex.variantId = variantId;
-      ex.r = r;
-      ex.h = h;
-      ex.a = a;
-      ex.raw_aa = -h * a;
-      ex.raw_Aa = 2 * a * r;
-      ex.raw_AA = -h * r;
-      ex.variantMin = localMinDomDosage;
-      ex.variantMax = localMaxDomDosage;
+        encodingExamples.size() >= MAX_EXAMPLES) {
+      std::string modeStr = "";
+      if (scaleGlobally)
+        modeStr = "Global";
+      else if (scalePerVariant)
+        modeStr = "Per-Variant";
+      else if (scaleByGroup)
+        modeStr = "By-Group";
+      else
+        modeStr = "None";
 
-      if (scalePerVariant || scaleGlobally || scaleByGroup) {
-        ex.scaled_aa = 2 * ((ex.raw_aa - localMinDomDosage) /
-                            (localMaxDomDosage - localMinDomDosage));
-        ex.scaled_Aa = 2 * ((ex.raw_Aa - localMinDomDosage) /
-                            (localMaxDomDosage - localMinDomDosage));
-        ex.scaled_AA = 2 * ((ex.raw_AA - localMinDomDosage) /
-                            (localMaxDomDosage - localMinDomDosage));
-      } else {
-        ex.scaled_aa = ex.raw_aa;
-        ex.scaled_Aa = ex.raw_Aa;
-        ex.scaled_AA = ex.raw_AA;
-      }
-
-      if (scalingFactor != 0 && scalingFactor != 1.0) {
-        ex.scaled_aa *= scalingFactor;
-        ex.scaled_Aa *= scalingFactor;
-        ex.scaled_AA *= scalingFactor;
-      }
-      encodingExamples.push_back(ex);
-
-      if (encodingExamples.size() >= MAX_EXAMPLES) {
-        std::string modeStr = "";
-        if (scaleGlobally)
-          modeStr = "Global";
-        else if (scalePerVariant)
-          modeStr = "Per-Variant";
-        else if (scaleByGroup)
-          modeStr = "By-Group";
-        else
-          modeStr = "None"; // Or Raw
-
-        printVariantEncodingPreview(encodingExamples, modeStr, true);
-        previewPrinted = true;
-      }
+      printVariantEncodingPreview(encodingExamples, modeStr, true);
+      previewPrinted = true;
     }
-
-    // Output variant information
-    std::cout << bcf_hdr_id2name(hdr, rec->rid) << "\t" << (rec->pos + 1)
-              << "\t" << variantId << "\t" << rec->d.allele[0] << "\t";
-
-    if (rec->n_allele > 1) {
-      std::cout << rec->d.allele[1];
-    } else {
-      std::cout << ".";
-    }
-
-    std::cout << "\t.\t.\t";
-    std::cout << "AC=" << Aa_count + 2 * AA_count
-              << ";AN=" << 2 * non_missing_count;
-
-    if (scalePerVariant) {
-      std::cout << ";variantMinDomDosage=" << localMinDomDosage
-                << ";variantMaxDomDosage=" << localMaxDomDosage;
-    } else if (scaleGlobally) {
-      std::cout << ";globalMinDomDosage=" << globalMinDomDosage
-                << ";globalMaxDomDosage=" << globalMaxDomDosage;
-    } else if (scaleByGroup) {
-      std::cout << ";groupMinDomDosage=" << localMinDomDosage
-                << ";groupMaxDomDosage=" << localMaxDomDosage
-                << ";group=" << group;
-    }
-
-    if (allInfo) {
-      std::cout << ";r=" << r << ";h=" << h << ";a=" << a;
-    }
-
-    // Check for low variance if scaling is enabled (only in dominance mode)
-    if (mode == "dominance" &&
-        (scalePerVariant || scaleGlobally || scaleByGroup)) {
-      double scaled_aa = 2 * ((dom_dosage_aa - localMinDomDosage) /
-                              (localMaxDomDosage - localMinDomDosage));
-      double scaled_Aa = 2 * ((dom_dosage_Aa - localMinDomDosage) /
-                              (localMaxDomDosage - localMinDomDosage));
-      double scaled_AA = 2 * ((dom_dosage_AA - localMinDomDosage) /
-                              (localMaxDomDosage - localMinDomDosage));
-
-      // Clamp values
-      if (scaled_aa < 0)
-        scaled_aa = 0;
-      if (scaled_Aa < 0)
-        scaled_Aa = 0;
-      if (scaled_AA < 0)
-        scaled_AA = 0;
-
-      // Check if any two genotype dosages are too close (pairwise comparison)
-      double diff_aa_Aa = std::abs(scaled_aa - scaled_Aa);
-      double diff_aa_AA = std::abs(scaled_aa - scaled_AA);
-      double diff_Aa_AA = std::abs(scaled_Aa - scaled_AA);
-
-      double minDiff = std::min({diff_aa_Aa, diff_aa_AA, diff_Aa_AA});
-
-      if (minDiff < lowVarianceThreshold) {
-        lowVarianceVariantsCount++;
-        if (lowVarianceVariantsCount <= warningLimit) {
-          std::cerr << "Warning: Variant '" << variantId
-                    << "' has genotypes with very similar scaled dosages (min "
-                       "difference="
-                    << minDiff << "). Scaled dosages: aa=" << scaled_aa
-                    << ", Aa=" << scaled_Aa << ", AA=" << scaled_AA << "\n";
-        } else if (lowVarianceVariantsCount == warningLimit + 1) {
-          std::cerr << "      (truncated...)" << std::endl;
-        }
-      }
-    }
-
-    std::cout << "\tDS";
-
-    // Pre-allocate buffer for output line (estimate: ~10 bytes per sample on
-    // average)
-    std::string output_line;
-    output_line.reserve(n_samples * 10);
-
-    // Output dosage values for each sample
-    for (int i = 0; i < n_samples; ++i) {
-      double dosage = 0.0;
-      bool is_missing = false;
-      int *gt_ptr = has_gt ? gt_arr + i * 2 : NULL;
-      float ds_value = has_ds ? ds_arr[i] : 0.0f;
-
-      if (has_gt) {
-        // Read genotype values once and cache them
-        int gt0 = gt_ptr[0];
-        int gt1 = gt_ptr[1];
-        int allele1_missing = bcf_gt_is_missing(gt0);
-        int allele2_missing = bcf_gt_is_missing(gt1);
-
-        if (allele1_missing && allele2_missing) {
-          is_missing = true;
-        } else if (allele1_missing || allele2_missing) {
-          // Haploid (one missing, one present)
-          dosage = 0.0;
-          haploidWarningCount++;
-          if (haploidWarningCount <= 5) {
-            std::cerr << "Warning: Haploid genotype detected for sample "
-                      << i + 1 << " at " << variantId << ". Setting to 0."
-                      << std::endl;
-          }
-        } else {
-          // Diploid (both present) - use cached values
-          int allele1 = bcf_gt_allele(gt0);
-          int allele2 = bcf_gt_allele(gt1);
-          int geno = -1;
-
-          if (allele1 == 0 && allele2 == 0)
-            geno = 0;
-          else if (allele1 != allele2)
-            geno = 1;
-          else if (allele1 > 0 && allele2 > 0)
-            geno = 2;
-
-          if (geno >= 0) {
-            if (mode == "dominance") {
-              if (geno == 0)
-                dosage = -h * a;
-              else if (geno == 1)
-                dosage = 2 * a * r;
-              else if (geno == 2)
-                dosage = -h * r;
-
-              if (scalePerVariant || scaleGlobally || scaleByGroup) {
-                dosage = 2 * ((dosage - localMinDomDosage) /
-                              (localMaxDomDosage - localMinDomDosage));
-                if (dosage < 0) {
-                  dosage = 0;
-                } else if (dosage > 2 + epsilon) {
-                  std::cerr << "Error: Dosage value " << dosage
-                            << " exceeds 2 + epsilon (" << (2 + epsilon) << ")"
-                            << std::endl;
-                  exit(1);
-                }
-              }
-            } else if (mode == "recessive") {
-              if (geno == 0)
-                dosage = 0.0;
-              else if (geno == 1)
-                dosage = 0.0;
-              else if (geno == 2)
-                dosage = 2.0;
-            }
-
-            if (scalingFactor != 0)
-              dosage *= scalingFactor;
-          }
-        }
-      } else if (has_ds) {
-        if (std::isnan(ds_value)) {
-          is_missing = true;
-        } else {
-          int geno = std::round(ds_value);
-          if (geno >= 0 && geno <= 2) {
-            if (mode == "dominance") {
-              if (geno == 0)
-                dosage = -h * a;
-              else if (geno == 1)
-                dosage = 2 * a * r;
-              else if (geno == 2)
-                dosage = -h * r;
-
-              if (scalePerVariant || scaleGlobally || scaleByGroup) {
-                dosage = 2 * ((dosage - localMinDomDosage) /
-                              (localMaxDomDosage - localMinDomDosage));
-                if (dosage < 0) {
-                  dosage = 0;
-                } else if (dosage > 2 + epsilon) {
-                  std::cerr << "Error: Dosage value " << dosage
-                            << " exceeds 2 + epsilon (" << (2 + epsilon) << ")"
-                            << std::endl;
-                  exit(1);
-                }
-              }
-            } else if (mode == "recessive") {
-              if (geno == 0)
-                dosage = 0.0;
-              else if (geno == 1)
-                dosage = 0.0;
-              else if (geno == 2)
-                dosage = 2.0;
-            }
-            if (scalingFactor != 0)
-              dosage *= scalingFactor;
-          }
-        }
-      } else {
-        is_missing = true;
-      }
-
-      // Append to buffer instead of immediate output
-      output_line += '\t';
-      if (is_missing) {
-        output_line += '.';
-      } else if (mode == "recessive" && scalingFactor == 1.0) {
-        // Fast path for recessive mode with no scaling: only outputs "0" or "2"
-        output_line += (dosage == 0.0) ? '0' : '2';
-      } else {
-        // Convert dosage to string and append
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%.6g", dosage);
-        output_line += buf;
-      }
-    }
-
-    // Write entire line at once
-    std::cout << output_line << '\n';
   }
 
-  free(gt_arr);
-  free(ds_arr);
-  bcf_destroy(rec);
-
-  // If we collected fewer than MAX_EXAMPLES, print them now
+  // Final preview check
   if (mode == "dominance" && !previewPrinted && !encodingExamples.empty()) {
-    // ... logic for printing preview ...
     std::string modeStr = "";
     if (scaleGlobally)
       modeStr = "Global";
@@ -999,62 +1108,91 @@ void processVcfFile(
     else if (scaleByGroup)
       modeStr = "By-Group";
     else
-      modeStr = "None"; // Or Raw
+      modeStr = "None";
 
     if (!scaleGlobally && !scalePerVariant && !scaleByGroup)
       modeStr = "No Scaling";
-
     if (scalingFactor != 1.0 && scalingFactor != 0) {
       modeStr += " (Factor: " + std::to_string(scalingFactor) + ")";
     }
-
     printVariantEncodingPreview(encodingExamples, modeStr, false);
   }
 
-  // Print runtime statistics
-  std::cerr << std::endl; // Clear progress line
+  // Print Summary
+  std::cerr << std::endl;
   std::cerr << "\nProcessing complete:" << std::endl;
-  std::cerr << "  * Variants processed       : " << totalVariants << std::endl;
-  std::cerr << "  * Variants kept            : " << keptVariants << std::endl;
+  std::cerr << "  * Variants processed       : " << stats.totalVariants
+            << std::endl;
+  std::cerr << "  * Variants kept            : " << stats.keptVariants
+            << std::endl;
 
-  if (countVariantsWithoutHomRef > 0 || countVariantsWithoutHomAlt > 0 ||
-      countVariantsWithoutHet > 0 || discardedVariantsCount > 0) {
-    std::cerr << "  * Variants discarded       : "
-              << (countVariantsWithoutHomRef + countVariantsWithoutHomAlt +
-                  countVariantsWithoutHet + discardedVariantsCount)
+  int totalDiscarded = stats.totalVariants - stats.keptVariants;
+
+  if (totalDiscarded > 0) {
+    std::cerr << "  * Variants discarded       : " << totalDiscarded
               << std::endl;
-    if (countVariantsWithoutHomRef > 0)
-      std::cerr << "      - No homozygous ref    : "
-                << countVariantsWithoutHomRef << std::endl;
-    if (countVariantsWithoutHomAlt > 0)
-      std::cerr << "      - No homozygous alt    : "
-                << countVariantsWithoutHomAlt << std::endl;
-    if (countVariantsWithoutHet > 0)
-      std::cerr << "      - No heterozygous      : " << countVariantsWithoutHet
+    if (stats.countVariantsWithoutHomRef > 0)
+      std::cerr << "      - Hom ref count < " << std::left << std::setw(6)
+                << minHomCount << ": " << stats.countVariantsWithoutHomRef
                 << std::endl;
-    if (discardedVariantsCount > 0)
-      std::cerr << "      - Not in group map     : " << discardedVariantsCount
+    if (stats.countVariantsWithoutHomAlt > 0)
+      std::cerr << "      - Hom alt count < " << std::left << std::setw(6)
+                << minHomCount << ": " << stats.countVariantsWithoutHomAlt
                 << std::endl;
+    if (stats.countVariantsWithoutHet > 0)
+      std::cerr << "      - Het count < " << std::left << std::setw(10)
+                << minHetCount << ": " << stats.countVariantsWithoutHet
+                << std::endl;
+
+    if (stats.countVariantsMinAAC > 0)
+      std::cerr << "      - Min AAC < " << std::left << std::setw(10) << minAAC
+                << ": " << stats.countVariantsMinAAC << std::endl;
+    if (stats.countVariantsMaxAAC > 0)
+      std::cerr << "      - Max AAC > " << std::left << std::setw(10) << maxAAC
+                << ": " << stats.countVariantsMaxAAC << std::endl;
+    if (stats.countVariantsMinMAC > 0)
+      std::cerr << "      - Min MAC < " << std::left << std::setw(10) << minMAC
+                << ": " << stats.countVariantsMinMAC << std::endl;
+    if (stats.countVariantsMaxMAC > 0)
+      std::cerr << "      - Max MAC > " << std::left << std::setw(10) << maxMAC
+                << ": " << stats.countVariantsMaxMAC << std::endl;
+
+    if (stats.countVariantsMinAAF > 0)
+      std::cerr << "      - Min AAF < " << std::left << std::setw(10) << minAAF
+                << ": " << stats.countVariantsMinAAF << std::endl;
+    if (stats.countVariantsMaxAAF > 0)
+      std::cerr << "      - Max AAF > " << std::left << std::setw(10) << maxAAF
+                << ": " << stats.countVariantsMaxAAF << std::endl;
+    if (stats.countVariantsMinMAF > 0)
+      std::cerr << "      - Min MAF < " << std::left << std::setw(10) << minMAF
+                << ": " << stats.countVariantsMinMAF << std::endl;
+    if (stats.countVariantsMaxMAF > 0)
+      std::cerr << "      - Max MAF > " << std::left << std::setw(10) << maxMAF
+                << ": " << stats.countVariantsMaxMAF << std::endl;
+
+    if (stats.discardedVariantsCount > 0)
+      std::cerr << "      - Not in group map    : "
+                << stats.discardedVariantsCount << std::endl;
   }
 
-  if (lowVarianceVariantsCount > 0) {
+  if (stats.lowVarianceVariantsCount > 0) {
     std::cerr << "  * Warnings:" << std::endl;
-    std::cerr << "      - Low variance dosages : " << lowVarianceVariantsCount
-              << std::endl;
+    std::cerr << "      - Low variance dosages : "
+              << stats.lowVarianceVariantsCount << std::endl;
   }
-  if (roundedDosageCount > 0) {
-    if (lowVarianceVariantsCount == 0)
+  if (stats.roundedDosageCount > 0) {
+    if (stats.lowVarianceVariantsCount == 0)
       std::cerr << "  * Warnings:" << std::endl;
-    std::cerr << "      - Rounded dosages      : " << roundedDosageCount
+    std::cerr << "      - Rounded dosages      : " << stats.roundedDosageCount
               << std::endl;
     std::cerr << "        (DS values were rounded to nearest integer)"
               << std::endl;
   }
 
-  if (haploidWarningCount > 0) {
-    if (lowVarianceVariantsCount == 0 && roundedDosageCount == 0)
+  if (stats.haploidWarningCount > 0) {
+    if (stats.lowVarianceVariantsCount == 0 && stats.roundedDosageCount == 0)
       std::cerr << "  * Warnings:" << std::endl;
-    std::cerr << "      - Haploid genotypes    : " << haploidWarningCount
+    std::cerr << "      - Haploid genotypes    : " << stats.haploidWarningCount
               << std::endl;
     std::cerr << "        (set to 0, warnings truncated after 5)" << std::endl;
   }
