@@ -1,9 +1,10 @@
-# plot vairant level results
+# plot variant level results
+setwd("~/Projects/06_call_chets/call_chets/examples/saige-set-based/")
 
+# Load utility functions for dose-response analysis
+source("utils.R")
 library(ggplot2)
 library(data.table)
-library(bravastring) # from devtools::install_github("frhl/bravastring")
-setwd("~/Projects/06_call_chets/call_chets/examples/set-based/")
 
 # for pretty colors
 col_palette <- c(
@@ -61,5 +62,22 @@ ggplot(plot_data, aes(x = -log10(expt.p), y = -log10(p.value), color = annotatio
   ggtitle("Simulating a completely recessive trait", "variant-level results")
 
 
+# ============================================================================
+# Dose-Response Analysis: Compare pLoF (causal) vs synonymous (null)
+# ============================================================================
 
+# Select most significant pLoF variant and a random synonymous variant
+set.seed(44)
+plof_variant <- d[annotation == "pLoF"][which.min(p.value.add)]
+syn_variant <- d[annotation == "synonymous"][sample(.N, 1)]
 
+# Plot dose-response comparison
+plot_dose_response_comparison(
+    d1 = plof_variant,
+    d2 = syn_variant,
+    vcf_file = "input/simulated.nonadditive.vcf.gz",
+    label1 = "pLoF",
+    label2 = "Synonymous",
+    color1 = col_palette["pLoF"],
+    color2 = col_palette["synonymous"]
+)

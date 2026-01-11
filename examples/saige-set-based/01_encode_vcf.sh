@@ -14,6 +14,7 @@ OUTPUT_NONADD="input/simulated.nonadditive.vcf.gz"
 # --min-het-count ${MIN_HET_COUNT} \
 # Convert to nonadditive encoding using Docker 
 # note: need to --scale-per-variant if only interested in variant-level results (faster)
+# whereas --scale-globally is required when doing set-based analysis.
 docker run --rm -v "$(pwd):/data" fhlassen/call_chets:1.0.13 \
     ./bin/recode \
         --input "/data/${INPUT}" \

@@ -1,8 +1,9 @@
+setwd("~/Projects/06_call_chets/call_chets/examples/saige-set-based/")
+# plot gene-level results
 
 library(ggplot2)
 library(data.table)
-library(bravastring) # importing get_expected_p() from devtools::install_github("frhl/bravastring")
-setwd("~/Projects/06_call_chets/call_chets/examples/set-based/")
+source("utils.R")
 
 # for pretty colors
 col_palette <- c(
@@ -55,6 +56,7 @@ ggplot(plot_data, aes(x = -log10(expt.p), y = -log10(p.value), color = annotatio
     color = "Annotation"
   ) + 
   ggtitle("Simulating a completely recessive trait", "Group-level results")
+
 
 
 
