@@ -14,3 +14,9 @@ examples/*.vcf.gz
 examples/gene_map.txt
 examples/phenotypes.txt
 examples/samples.txt
+examples/regenie-variant-based/input/
+examples/regenie-variant-based/output/
+
+# OS / editor junk
+.DS_Store
+.Rhistory
