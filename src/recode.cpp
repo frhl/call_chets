@@ -15,6 +15,8 @@
 #include <string>
 #include <vector>
 
+#include "cli_utils.hpp"
+#include "hts_raii.hpp"
 #include "logging.hpp"
 #include "version.hpp"
 
@@ -65,6 +67,39 @@ void printVariantEncodingPreview(
   std::cerr << std::endl;
 }
 
+/**
+ * Scaling Modes Overview:
+ *
+ * This tool supports three mutually exclusive scaling modes for dominance
+ * encoding:
+ *
+ * 1. --scale-per-variant (Single Pass, Fast)
+ *    - Each variant is scaled independently to [0, 2] range
+ *    - Uses variant-specific min/max dominance dosages
+ *    - Betas/SEs from regression are NOT comparable across variants
+ *    - Best for: Individual variant testing, speed-critical applications
+ *
+ * 2. --scale-globally (Two Passes, Comparable)
+ *    - All variants scaled using global min/max across entire file
+ *    - Pass 1: Scan all variants to find global min/max
+ *    - Pass 2: Apply global scaling and output
+ *    - Betas/SEs ARE comparable across variants
+ *    - Best for: Burden tests, group-based testing requiring comparable effects
+ *
+ * 3. --scale-by-group <file> (Two Passes, Group-Level Comparability)
+ *    - Variants scaled using group-specific (e.g., gene-level) min/max
+ *    - Requires mapping file: tab-separated with 'variant' and 'gene' columns
+ *    - Betas/SEs comparable within groups, not across groups
+ *    - Best for: Gene-based burden tests where within-gene comparability needed
+ *
+ * The raw dominance deviation formula:
+ *   aa (hom ref):  -h * a
+ *   Aa (het):       2 * a * r
+ *   AA (hom alt):  -h * r
+ * Where r = freq(aa), h = freq(Aa), a = freq(AA)
+ *
+ * Scaling formula: scaled = 2 * ((raw - min) / (max - min))
+ */
 void printUsage(const char *path) {
   // Get version info
   std::string version = getFullVersion();
@@ -156,26 +191,7 @@ void printUsage(const char *path) {
       << "  --max-[aaf|maf] <f>        Max Alternate/Minor Allele Frequency\n";
 }
 
-std::vector<std::string> sortChromosomes(const std::set<std::string> &contigs) {
-  std::vector<std::string> chromosomes(contigs.begin(), contigs.end());
-  std::sort(chromosomes.begin(), chromosomes.end(),
-            [](const std::string &a, const std::string &b) {
-              std::string a_num = a.substr(0, 3) == "chr" ? a.substr(3) : a;
-              std::string b_num = b.substr(0, 3) == "chr" ? b.substr(3) : b;
-
-              if (isdigit(a_num[0]) && isdigit(b_num[0])) {
-                return std::stoi(a_num) < std::stoi(b_num);
-              }
-              if (isdigit(a_num[0]) && !isdigit(b_num[0])) {
-                return true;
-              }
-              if (!isdigit(a_num[0]) && isdigit(b_num[0])) {
-                return false;
-              }
-              return a < b;
-            });
-  return chromosomes;
-}
+// sortChromosomes is now provided by cli_utils.hpp as call_chets::sortChromosomes
 
 bool parseArguments(int argc, char *argv[], std::string &pathInput,
                     std::string &mode, double &scalingFactor,
@@ -239,7 +255,7 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
   if (pathInput.empty()) {
     std::cerr << "Error: --input is required\n";
     printUsage(argv[0]);
-    return 1;
+    return false;
   }
 
   std::map<std::string, std::string> files;
@@ -290,29 +306,7 @@ bool parseArguments(int argc, char *argv[], std::string &pathInput,
   return true;
 }
 
-std::map<std::string, std::string>
-readGroupMap(const std::string &groupMapPath) {
-  std::map<std::string, std::string> groupMap;
-  std::ifstream infile(groupMapPath);
-  if (!infile) {
-    std::cerr << "Error: Cannot open group map file for reading: "
-              << groupMapPath << std::endl;
-    exit(1);
-  }
-
-  std::string line, variant, group;
-  std::getline(infile, line); // skip header
-  while (std::getline(infile, line)) {
-    std::istringstream iss(line);
-    if (!(iss >> variant >> group)) {
-      break;
-    }
-    groupMap[variant] = group;
-  }
-
-  infile.close();
-  return groupMap;
-}
+// readGroupMap is now provided by cli_utils.hpp as call_chets::readGroupMap
 
 bool hasFormat(const bcf_hdr_t *hdr, const char *format) {
   return bcf_hdr_id2int(hdr, BCF_DT_ID, format) >= 0;
@@ -510,39 +504,11 @@ void printHeader(const bcf_hdr_t *hdr,
   std::cout << "\n";
 }
 
-// RAII Wrappers for HTSlib resources
-struct HtsFileDeleter {
-  void operator()(htsFile *fp) const {
-    if (fp)
-      bcf_close(fp);
-  }
-};
-using HtsFileUPtr = std::unique_ptr<htsFile, HtsFileDeleter>;
-
-struct BcfHdrDeleter {
-  void operator()(bcf_hdr_t *hdr) const {
-    if (hdr)
-      bcf_hdr_destroy(hdr);
-  }
-};
-using BcfHdrUPtr = std::unique_ptr<bcf_hdr_t, BcfHdrDeleter>;
-
-struct Bcf1Deleter {
-  void operator()(bcf1_t *rec) const {
-    if (rec)
-      bcf_destroy(rec);
-  }
-};
-using Bcf1UPtr = std::unique_ptr<bcf1_t, Bcf1Deleter>;
-
-// Helper to safely open VCF
-HtsFileUPtr openVcf(const std::string &path, const char *mode = "r") {
-  HtsFileUPtr fp(bcf_open(path.c_str(), mode));
-  if (!fp) {
-    throw std::runtime_error("Cannot open VCF/BCF file: " + path);
-  }
-  return fp;
-}
+// RAII Wrappers are now provided by hts_raii.hpp
+using call_chets::Bcf1UPtr;
+using call_chets::BcfHdrUPtr;
+using call_chets::HtsFileUPtr;
+using call_chets::openVcf;
 
 // Processing stats structure
 struct ProcessingStats {
@@ -707,6 +673,8 @@ DominanceDosages calculateRawDominance(double r, double h, double a) {
 }
 
 double scaleDosage(double val, double minVal, double maxVal) {
+  if (maxVal == minVal)
+    return 0.0;
   return 2.0 * ((val - minVal) / (maxVal - minVal));
 }
 
@@ -990,7 +958,9 @@ void processVariant(
                                          localMax, scaling, scalingFactor);
           } catch (const std::exception &e) {
             std::cerr << "Error: " << e.what() << std::endl;
-            exit(1);
+            free(gt_arr);
+            free(ds_arr);
+            throw;
           }
         }
       }
@@ -1005,7 +975,9 @@ void processVariant(
                                          localMax, scaling, scalingFactor);
           } catch (const std::exception &e) {
             std::cerr << "Error: " << e.what() << std::endl;
-            exit(1);
+            free(gt_arr);
+            free(ds_arr);
+            throw;
           }
         }
       }
@@ -1318,7 +1290,14 @@ int main(int argc, char *argv[]) {
 
   // Validate and load group map if specified
   if (!scaleByGroupPath.empty()) {
-    groupMap = readGroupMap(scaleByGroupPath);
+    std::string errorMsg;
+    groupMap = call_chets::readGroupMap(scaleByGroupPath, errorMsg);
+    if (!errorMsg.empty()) {
+      std::cerr << errorMsg << std::endl;
+      bcf_hdr_destroy(hdr);
+      bcf_close(fp);
+      return 1;
+    }
     if (groupMap.empty()) {
       std::cerr << "Error: Group map file is empty or contains no valid data: "
                 << scaleByGroupPath << std::endl;
@@ -1384,7 +1363,7 @@ int main(int argc, char *argv[]) {
 
   // If we did two passes, we need to reopen the file
   if (needTwoPass) {
-    std::vector<std::string> sortedContigs = sortChromosomes(chromosomes);
+    std::vector<std::string> sortedContigs = call_chets::sortChromosomes(chromosomes);
     bcf_close(fp);
 
     // Reopen file for actual processing

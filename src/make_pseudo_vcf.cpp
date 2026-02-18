@@ -1,3 +1,4 @@
+#include "cli_utils.hpp"
 #include "logging.hpp"
 #include "version.hpp"
 #include <algorithm>
@@ -132,32 +133,7 @@ void printUsage(const char *path) {
                "bgzip > out.vcf.gz\n\n";
 }
 
-std::vector<std::string> sortChromosomes(const std::set<std::string> &contigs) {
-  std::vector<std::string> chromosomes(contigs.begin(), contigs.end());
-  std::sort(chromosomes.begin(), chromosomes.end(),
-            [](const std::string &a, const std::string &b) {
-              // Extract the part after 'chr' prefix
-              std::string a_num = a.substr(0, 3) == "chr" ? a.substr(3) : a;
-              std::string b_num = b.substr(0, 3) == "chr" ? b.substr(3) : b;
-
-              // If both are numeric chromosomes
-              if (isdigit(a_num[0]) && isdigit(b_num[0])) {
-                return std::stoi(a_num) < std::stoi(b_num);
-              }
-              // If a is numeric but b is not (e.g., a = chr2, b = chrX)
-              if (isdigit(a_num[0]) && !isdigit(b_num[0])) {
-                return true;
-              }
-              // If b is numeric but a is not
-              if (!isdigit(a_num[0]) && isdigit(b_num[0])) {
-                return false;
-              }
-              // If neither are numeric (e.g., chrX, chrY, etc.), then just use
-              // lexicographical order
-              return a < b;
-            });
-  return chromosomes;
-}
+// sortChromosomes is now provided by cli_utils.hpp as call_chets::sortChromosomes
 
 int main(int argc, char *argv[]) {
   if (argc > 0) {
@@ -634,7 +610,7 @@ int main(int argc, char *argv[]) {
   }
 
   // sort chromosomes
-  std::vector<std::string> sortedContigs = sortChromosomes(contigs);
+  std::vector<std::string> sortedContigs = call_chets::sortChromosomes(contigs);
 
   // Print the output header
   std::cout << "##fileformat=VCFv4.2\n";
@@ -763,7 +739,7 @@ int main(int argc, char *argv[]) {
                     << ";HOM=" << currentHom << ";CIS=" << currentCis;
 
           // be verbose at times'
-          if ((mode == "dominance") & (allInfo == true)) {
+          if (mode == "dominance" && allInfo) {
             std::cout << ";r=" << r << ";h=" << h << ";a=" << a
                       << ";minDosage=" << minDomDosage
                       << ";maxDosage=" << maxDomDosage << ";DS0="
@@ -795,7 +771,7 @@ int main(int argc, char *argv[]) {
               } else if (dosage == 2.0) {
                 dosage = -h * r;
               }
-              if (scaleDosage) {
+              if (scaleDosage && maxDomDosage != minDomDosage) {
                 dosage = 2 * ((dosage - minDomDosage) /
                               (maxDomDosage - minDomDosage));
               }

@@ -1,14 +1,14 @@
-#include <cmath>
-#include <fstream>
 #include <htslib/hts.h>
 #include <htslib/vcf.h>
 #include <iostream>
+#include <map>
 #include <string>
 
-int missing_count = 0;
-bool verbose = false;
+#include "hts_raii.hpp"
+#include "logging.hpp"
+#include "version.hpp"
 
-void printUsage(const char *path) {
+static void printUsage(const char *path) {
   std::cerr << "\nProgram: VCF PP Filter\n\n";
   std::cerr << "Usage: " << path
             << " --input <VCF/BCF file> --output <output file> --pp-threshold "
@@ -39,12 +39,6 @@ void printUsage(const char *path) {
                "extension of the output file path.\n";
 }
 
-void set_genotype_to_missing(bcf_fmt_t *fmt_pp, int i) {
-  float missing_value = bcf_float_missing;
-  ((float *)fmt_pp->p)[i] = missing_value;
-  missing_count++;
-}
-
 int main(int argc, char *argv[]) {
   if (argc > 0) {
     std::string programName = argv[0];
@@ -59,7 +53,7 @@ int main(int argc, char *argv[]) {
   std::string inputPath;
   std::string outputFilePath;
   float ppThreshold = 0.0;
-  int variant_count = 0;
+  bool verbose = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -70,7 +64,7 @@ int main(int argc, char *argv[]) {
       inputPath = argv[++i];
     } else if ((arg == "--output" || arg == "-o") && i + 1 < argc) {
       outputFilePath = argv[++i];
-    } else if ((arg == "--threshold" || arg == "-t") && i + 1 < argc) {
+    } else if ((arg == "--pp-threshold" || arg == "-p") && i + 1 < argc) {
       ppThreshold = std::stof(argv[++i]);
     } else if (arg == "--verbose" || arg == "-v") {
       verbose = true;
@@ -84,66 +78,99 @@ int main(int argc, char *argv[]) {
 
   if (inputPath.empty() || outputFilePath.empty() || ppThreshold <= 0) {
     std::cerr
-        << "Error: --input, --output, and --threshold (>0) are required\n";
+        << "Error: --input, --output, and --pp-threshold (>0) are required\n";
     printUsage(argv[0]);
     return 1;
   }
 
-  htsFile *inFile = bcf_open(inputPath.c_str(), "r");
+  std::map<std::string, std::string> files;
+  files["Input"] = inputPath;
+  files["Output"] = outputFilePath;
+
+  std::map<std::string, std::string> params;
+  params["PP Threshold"] = std::to_string(ppThreshold);
+  params["Verbose"] = verbose ? "Yes" : "No";
+
+  call_chets::printHeader("FILTER_PP", "Filter VCF by PP threshold", files,
+                          params);
+
+  // Use RAII for input file and header
+  call_chets::HtsFileUPtr inFile(bcf_open(inputPath.c_str(), "r"));
   if (!inFile) {
     std::cerr << "Could not open input file: " << inputPath << std::endl;
     return 1;
   }
 
-  bcf_hdr_t *hdr = bcf_hdr_read(inFile);
-
-  htsFile *outFile;
-  if (outputFilePath.size() >= 4 &&
-      outputFilePath.substr(outputFilePath.size() - 4) == ".bcf") {
-    outFile = bcf_open(outputFilePath.c_str(), "wb"); // BCF format (binary)
-  } else if (outputFilePath.size() >= 7 &&
-             outputFilePath.substr(outputFilePath.size() - 7) == ".vcf.gz") {
-    outFile = bcf_open(outputFilePath.c_str(), "wz"); // Compressed VCF format
-  } else {
-    outFile =
-        bcf_open(outputFilePath.c_str(), "w"); // Non-compressed VCF format
+  call_chets::BcfHdrUPtr hdr(bcf_hdr_read(inFile.get()));
+  if (!hdr) {
+    std::cerr << "Error: Cannot read header from input file: " << inputPath
+              << std::endl;
+    return 1;
   }
 
+  // Determine output format from extension
+  const char *outMode = "w";
+  if (outputFilePath.size() >= 4 &&
+      outputFilePath.substr(outputFilePath.size() - 4) == ".bcf") {
+    outMode = "wb";
+  } else if (outputFilePath.size() >= 7 &&
+             outputFilePath.substr(outputFilePath.size() - 7) == ".vcf.gz") {
+    outMode = "wz";
+  }
+
+  call_chets::HtsFileUPtr outFile(bcf_open(outputFilePath.c_str(), outMode));
   if (!outFile) {
     std::cerr << "Could not open output file: " << outputFilePath << std::endl;
     return 1;
   }
 
-  bcf_hdr_write(outFile, hdr);
+  if (bcf_hdr_write(outFile.get(), hdr.get()) < 0) {
+    std::cerr << "Error: Failed to write VCF header" << std::endl;
+    return 1;
+  }
 
-  bcf1_t *rec = bcf_init();
+  call_chets::Bcf1UPtr rec(bcf_init());
+  int missing_count = 0;
+  int variant_count = 0;
 
-  while (bcf_read(inFile, hdr, rec) == 0) {
+  while (bcf_read(inFile.get(), hdr.get(), rec.get()) == 0) {
     variant_count++;
-    bcf_unpack(rec, BCF_UN_ALL);
+    bcf_unpack(rec.get(), BCF_UN_ALL);
 
     // Get the PP field for each sample
-    bcf_fmt_t *fmt_pp = bcf_get_fmt(hdr, rec, "PP");
-    bcf_fmt_t *fmt_gt = bcf_get_fmt(hdr, rec, "GT");
+    bcf_fmt_t *fmt_pp = bcf_get_fmt(hdr.get(), rec.get(), "PP");
     if (fmt_pp) {
-      int num_samples = bcf_hdr_nsamples(hdr);
-      for (int i = 0; i < num_samples; ++i) {
-        std::string genotype =
-            std::to_string(bcf_gt_allele(fmt_gt->p[i * 2])) + "|" +
-            std::to_string(bcf_gt_allele(fmt_gt->p[i * 2 + 1]));
+      int num_samples = bcf_hdr_nsamples(hdr.get());
 
-        // Accessing the PP value for each sample
-        if (genotype != "0|0" && genotype != "1|1") {
-          float *pp_array = (float *)(fmt_pp->p);
+      // Use bcf_get_genotypes for safe genotype access
+      int *gt_arr = nullptr;
+      int ngt_arr = 0;
+      int ngt = bcf_get_genotypes(hdr.get(), rec.get(), &gt_arr, &ngt_arr);
+
+      if (ngt > 0 && gt_arr) {
+        for (int i = 0; i < num_samples; ++i) {
+          int allele0 = bcf_gt_is_missing(gt_arr[i * 2]) ? -1 : bcf_gt_allele(gt_arr[i * 2]);
+          int allele1 = bcf_gt_is_missing(gt_arr[i * 2 + 1]) ? -1 : bcf_gt_allele(gt_arr[i * 2 + 1]);
+
+          // Skip hom-ref (0|0) and hom-alt (1|1) — only filter heterozygotes
+          if (allele0 == allele1) {
+            continue;
+          }
+
+          // Accessing the PP value for each sample
+          float *pp_array = reinterpret_cast<float *>(fmt_pp->p);
           float pp_value = pp_array[i];
 
           // Check PP value and set genotype to missing if below the threshold
           if (pp_value != bcf_float_missing && pp_value < ppThreshold) {
-            set_genotype_to_missing(fmt_pp, i);
+            float missing_value = bcf_float_missing;
+            reinterpret_cast<float *>(fmt_pp->p)[i] = missing_value;
             missing_count++;
           }
         }
+        free(gt_arr);
       }
+
       if (verbose && variant_count % 100 == 0) {
         std::cerr << "Processed " << variant_count << " variants. "
                   << "Heterozygotes set to missing so far: " << missing_count
@@ -152,13 +179,8 @@ int main(int argc, char *argv[]) {
     }
 
     // Write the processed record to output file
-    bcf_write(outFile, hdr, rec);
+    bcf_write(outFile.get(), hdr.get(), rec.get());
   }
-
-  bcf_destroy(rec);
-  bcf_hdr_destroy(hdr);
-  bcf_close(inFile);
-  bcf_close(outFile);
 
   std::cerr << "Total genotypes set to missing: " << missing_count << std::endl;
 

@@ -1,3 +1,4 @@
+#include "hts_raii.hpp"
 #include "logging.hpp"
 #include "version.hpp"
 #include <ctime>
@@ -78,6 +79,19 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  std::map<std::string, std::string> files;
+  files["Input"] = pathInput;
+  files["Mapping"] = mappingFilePath;
+
+  std::map<std::string, std::string> params;
+  if (maxAf < std::numeric_limits<float>::max())
+    params["Max AF"] = std::to_string(maxAf);
+  if (maxMaf < std::numeric_limits<float>::max())
+    params["Max MAF"] = std::to_string(maxMaf);
+
+  call_chets::printHeader("COUNT_BY_GENE", "Count genotypes by gene", files,
+                          params);
+
   // Load mapping file
   gzFile mappingFile = gzopen(mappingFilePath.c_str(), "r");
   if (!mappingFile) {
@@ -110,37 +124,34 @@ int main(int argc, char *argv[]) {
   }
   gzclose(mappingFile);
 
-  // Open the VCF file
-  htsFile *vcfFile = bcf_open(pathInput.c_str(), "r");
+  // Open the VCF file using RAII wrappers
+  call_chets::HtsFileUPtr vcfFile(bcf_open(pathInput.c_str(), "r"));
   if (!vcfFile) {
     std::cerr << "Error: Cannot open VCF file for reading: " << pathInput
               << std::endl;
     return 1;
   }
 
-  bcf_hdr_t *header = bcf_hdr_read(vcfFile);
+  call_chets::BcfHdrUPtr header(bcf_hdr_read(vcfFile.get()));
   if (!header) {
     std::cerr << "Error: Cannot read header from VCF file." << std::endl;
-    bcf_close(vcfFile);
     return 1;
   }
 
-  bcf1_t *record = bcf_init();
+  call_chets::Bcf1UPtr record(bcf_init());
   if (!record) {
     std::cerr << "Error: Cannot initialize BCF record." << std::endl;
-    bcf_hdr_destroy(header);
-    bcf_close(vcfFile);
     return 1;
   }
 
-  totalSamples = bcf_hdr_nsamples(header);
+  totalSamples = bcf_hdr_nsamples(header.get());
   GeneToIndivMap geneToIndividuals;
   int ngt, *gt_arr = nullptr, ngt_arr = 0;
 
   // iterate over all variants
-  while (bcf_read(vcfFile, header, record) == 0) {
-    bcf_unpack(record, BCF_UN_ALL);
-    std::string chrom = bcf_hdr_id2name(header, record->rid);
+  while (bcf_read(vcfFile.get(), header.get(), record.get()) == 0) {
+    bcf_unpack(record.get(), BCF_UN_ALL);
+    std::string chrom = bcf_hdr_id2name(header.get(), record->rid);
     int pos = record->pos + 1;
     std::string ref = record->d.allele[0];
     std::string alt = record->n_allele > 1 ? record->d.allele[1] : ".";
@@ -148,19 +159,22 @@ int main(int argc, char *argv[]) {
         chrom + ":" + std::to_string(pos) + ":" + ref + ":" + alt;
 
     // Check if the current variant is in mapping
-    if (variantToGene.find(variantKey) != variantToGene.end()) {
-      ngt = bcf_get_genotypes(header, record, &gt_arr, &ngt_arr);
+    auto mapIt = variantToGene.find(variantKey);
+    if (mapIt != variantToGene.end()) {
+      ngt = bcf_get_genotypes(header.get(), record.get(), &gt_arr, &ngt_arr);
       if (ngt <= 0)
         continue; // Skip if no genotype information
 
-      int n_samples = bcf_hdr_nsamples(header);
+      int n_samples = bcf_hdr_nsamples(header.get());
       int alleleCount = 0;
+      int nonMissingCount = 0;
 
       for (int i = 0; i < n_samples; ++i) {
-        if (gt_arr[i * 2] == bcf_gt_missing ||
-            gt_arr[i * 2 + 1] == bcf_gt_missing)
+        if (bcf_gt_is_missing(gt_arr[i * 2]) ||
+            bcf_gt_is_missing(gt_arr[i * 2 + 1]))
           continue;
 
+        nonMissingCount++;
         int allele1 = bcf_gt_allele(gt_arr[i * 2]);
         int allele2 = bcf_gt_allele(gt_arr[i * 2 + 1]);
 
@@ -168,8 +182,11 @@ int main(int argc, char *argv[]) {
         alleleCount += (allele1 > 0) + (allele2 > 0);
       }
 
-      // Calculate allele frequency
-      float alleleFrequency = static_cast<float>(alleleCount) / (2 * n_samples);
+      // Calculate allele frequency using non-missing samples
+      if (nonMissingCount == 0)
+        continue;
+      float alleleFrequency =
+          static_cast<float>(alleleCount) / (2 * nonMissingCount);
       float minorAlleleFrequency =
           std::min(alleleFrequency, 1.0f - alleleFrequency);
 
@@ -178,8 +195,8 @@ int main(int argc, char *argv[]) {
         continue;
 
       for (int i = 0; i < totalSamples; ++i) {
-        if (gt_arr[i * 2] == bcf_gt_missing ||
-            gt_arr[i * 2 + 1] == bcf_gt_missing)
+        if (bcf_gt_is_missing(gt_arr[i * 2]) ||
+            bcf_gt_is_missing(gt_arr[i * 2 + 1]))
           continue;
 
         int allele1 = bcf_gt_allele(gt_arr[i * 2]);
@@ -188,8 +205,8 @@ int main(int argc, char *argv[]) {
         bool isHet = allele1 != allele2;
         bool isHomAlt = allele1 == allele2 && allele1 != 0;
 
-        for (const auto &gene : variantToGene[variantKey]) {
-          auto &indiv = geneToIndividuals[gene][i];
+        for (const auto &geneStr : mapIt->second) {
+          auto &indiv = geneToIndividuals[geneStr][i];
           if (isHomAlt)
             indiv.hasHomAlt = true;
           else if (isHet)
@@ -201,12 +218,9 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // Free resources
+  // gt_arr is managed by htslib's internal allocator
   if (gt_arr)
     free(gt_arr);
-  bcf_destroy(record);
-  bcf_hdr_destroy(header);
-  bcf_close(vcfFile);
 
   std::cout << "region\taa\tAa\tAA\tsamples\n";
   // Output preparation and writing

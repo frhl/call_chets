@@ -15,7 +15,7 @@ endif
 CXX := g++
 
 # Compiler flags
-CXXFLAGS := -O2 -std=c++11 -Wall -DVERSION=\"$(GIT_VERSION)\" -DGIT_COMMIT=\"$(GIT_COMMIT)\" -DGIT_DATE=\"$(GIT_DATE)\"
+CXXFLAGS := -O2 -std=c++11 -Wall -Wextra -Wpedantic -Wshadow -DVERSION=\"$(GIT_VERSION)\" -DGIT_COMMIT=\"$(GIT_COMMIT)\" -DGIT_DATE=\"$(GIT_DATE)\"
 
 # Include directories
 INCLUDES := -I./src
@@ -38,13 +38,8 @@ LIBS := $(LIBS_PATH) -lz -lhts
 # Output directory
 BIN_DIR := bin
 
-# Output binaries
-TARGET_CALL_CHETS := $(BIN_DIR)/call_chets
-TARGET_ENCODE := $(BIN_DIR)/encode_vcf
-TARGET_RECODE := $(BIN_DIR)/recode
-TARGET_TRANSFORM := $(BIN_DIR)/transform
 # Target executables
-TARGETS := bin/interpret_phase bin/make_pseudo_vcf bin/recode bin/filter_pp bin/count_by_gene bin/encode_vcf_by_group
+TARGETS := bin/interpret_phase bin/make_pseudo_vcf bin/recode bin/filter_pp bin/count_by_gene
 
 # Legacy symlinks (for backward compatibility)
 LEGACY_LINKS := bin/call_chets bin/encode_vcf bin/transform bin/filter_vcf_by_pp bin/orthogonalize
@@ -75,10 +70,6 @@ bin/filter_pp: src/filter_pp.o
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
 
 bin/count_by_gene: src/count_by_gene.o
-	@mkdir -p bin
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
-
-bin/encode_vcf_by_group: src/encode_vcf_by_group.o
 	@mkdir -p bin
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $@ $^ $(LIBS)
 
