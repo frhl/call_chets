@@ -54,22 +54,42 @@ public:
   /**
    * @brief Set the rule for compressing dosages within a haplotype.
    *
-   * @param rule Rule name: "product", "additive", "min", "max". Default:
-   * "product".
-   */
-  /**
-   * @brief Set the rule for compressing dosages within a haplotype.
+   * When multiple variants exist on the same haplotype, this rule determines
+   * how their scores are combined into a single haplotype score.
    *
    * @param rule Rule name: "product", "additive", "min", "max". Default:
    * "product".
+   *
+   * Collapse Rules:
+   * - "product": Multiply scores together. Best for independent effects.
+   *              Example: scores [0.8, 0.9] -> 0.8 * 0.9 = 0.72
+   * - "additive": Sum the scores. Best for cumulative effects.
+   *              Example: scores [0.8, 0.9] -> 0.8 + 0.9 = 1.7
+   * - "min": Take the minimum score. Conservative; worst variant dominates.
+   *              Example: scores [0.8, 0.9] -> min(0.8, 0.9) = 0.8
+   * - "max": Take the maximum score. Optimistic; best variant dominates.
+   *              Example: scores [0.8, 0.9] -> max(0.8, 0.9) = 0.9
    */
   void setHaplotypeCollapseRule(const std::string &rule);
 
   /**
    * @brief Set the rule for combining scores across haplotypes (at gene level).
    *
+   * After haplotype scores are computed, this rule determines how to combine
+   * the two haplotype scores into a final gene-level score.
+   *
    * @param rule Rule name: "product", "additive", "min", "max". Default:
    * "product".
+   *
+   * Collapse Rules (same as haplotype level):
+   * - "product": Multiply haplotype scores. Good for recessive-like effects.
+   *              Example: hap1=0.8, hap2=0.9 -> 0.8 * 0.9 = 0.72
+   * - "additive": Sum haplotype scores. Good for additive effects.
+   *              Example: hap1=0.8, hap2=0.9 -> 0.8 + 0.9 = 1.7
+   * - "min": Minimum of haplotype scores. Conservative approach.
+   *              Example: hap1=0.8, hap2=0.9 -> 0.8
+   * - "max": Maximum of haplotype scores. Optimistic approach.
+   *              Example: hap1=0.8, hap2=0.9 -> 0.9
    */
   void setGeneCollapseRule(const std::string &rule);
 

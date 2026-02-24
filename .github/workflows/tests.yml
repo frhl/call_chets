@@ -7,7 +7,7 @@ on:
     branches: [ "main", "dev", "develop" ]
 
 jobs:
-  test:
+  test-ubuntu:
     runs-on: ubuntu-latest
 
     steps:
@@ -40,6 +40,41 @@ jobs:
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: test-outputs
+        name: test-outputs-ubuntu
+        path: tests/output_*.txt
+        retention-days: 7
+
+  test-macos:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: brew install htslib
+
+    - name: Build project
+      run: make
+
+    - name: Run call_chets tests
+      run: |
+        cd tests
+        ./run_tests.sh
+
+    - name: Run recode/transform tests
+      run: |
+        cd tests
+        ./run_transform_tests.sh
+
+    - name: Run variant counting tests
+      run: |
+        cd tests
+        ./test_variant_counting.sh
+
+    - name: Upload test artifacts on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-outputs-macos
         path: tests/output_*.txt
         retention-days: 7

@@ -1,5 +1,5 @@
 # Use an official base image, e.g., Ubuntu
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # Set maintainer label
 LABEL maintainer="flassen@well.ox.ac.uk"
@@ -20,9 +20,9 @@ RUN apt-get update && apt-get install -y \
     libhts-dev \
     git
 
-# Clone htslib
+# Clone htslib (pinned to version 1.19 for reproducibility)
 WORKDIR /usr/src
-RUN git clone --recurse-submodules https://github.com/samtools/htslib.git
+RUN git clone --branch 1.19 --depth 1 --recurse-submodules https://github.com/samtools/htslib.git
 
 # Install htslib
 

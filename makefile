@@ -94,6 +94,10 @@ PREFIX ?= /usr/local
 install: all
 	@mkdir -p $(PREFIX)/bin
 	@cp $(TARGETS) $(PREFIX)/bin/
-	@# Copy symlinks if desired, or let user rely on new names
+	@ln -sf interpret_phase $(PREFIX)/bin/call_chets
+	@ln -sf make_pseudo_vcf $(PREFIX)/bin/encode_vcf
+	@ln -sf recode $(PREFIX)/bin/transform
+	@ln -sf recode $(PREFIX)/bin/orthogonalize
+	@ln -sf filter_pp $(PREFIX)/bin/filter_vcf_by_pp
 
 .PHONY: all clean legacy_links install
