@@ -1,0 +1,51 @@
+
+[RECODE] Transform genotypes/dosages to dominance encoding
+  * Author        : Frederik Lassen, University of Oxford
+  * Contact       : frederik.heymann@gmail.com
+  * Version       : 1.0.11 / commit = 3c4f85c / release = 2026-01-04
+  * Run date      : 04/01/2026 - 16:48:05
+
+Files:
+  * Input         : [/Users/flassen/Projects/06_call_chets/call_chets/tests/test_logging.vcf]
+
+Parameters:
+  * All Info      : No
+  * Min Het Count : 1
+  * Min Hom Count : 1
+  * Mode          : dominance
+  * Scale Factor  : 1.000000
+  * Scale Global  : No
+  * Scale Variant : Yes
+  * Recoding       : [0, 1, 2] -> [-h*a, 2*a*r, -h*r]
+  * Number of passes: 1
+  * Number of samples: 6
+
+Processing variants (single pass)...
+variant 'chr1:100:A:T' has 0 (AA) homozygous alleles (min required: 1 for minor hom). Skipping..
+variant 'chr1:200:A:T' has 0 (AA) homozygous alleles (min required: 1 for minor hom). Skipping..
+variant 'chr1:300:A:T' has 0 (AA) homozygous alleles (min required: 1 for minor hom). Skipping..
+variant 'chr1:400:A:T' has 0 (AA) homozygous alleles (min required: 1 for minor hom). Skipping..
+variant 'chr1:500:A:T' has 0 (AA) homozygous alleles (min required: 1 for minor hom). Skipping..
+      (truncated...)
+variant 'chr1:1000:C:G' has 0 (aa) homozygous alleles (min required: 1 for minor hom). Skipping..
+variant 'chr1:2000:C:G' has 0 (aa) homozygous alleles (min required: 1 for minor hom). Skipping..
+variant 'chr1:10000:G:C' has 0 heterozygotes (min required: 1). Skipping..
+variant 'chr1:20000:G:C' has 0 heterozygotes (min required: 1). Skipping..
+variant 'chr1:30000:G:C' has 0 heterozygotes (min required: 1). Skipping..
+variant 'chr1:40000:G:C' has 0 heterozygotes (min required: 1). Skipping..
+variant 'chr1:50000:G:C' has 0 heterozygotes (min required: 1). Skipping..
+      (truncated...)
+variant 'chr1:3000:C:G' has 0 (aa) homozygous alleles (min required: 1 for minor hom). Skipping..
+variant 'chr1:4000:C:G' has 0 (aa) homozygous alleles (min required: 1 for minor hom). Skipping..
+variant 'chr1:5000:C:G' has 0 (aa) homozygous alleles (min required: 1 for minor hom). Skipping..
+      (truncated...)
+
+
+Processing complete:
+  * Variants processed       : 20
+  * Variants kept            : 0
+  * Variants discarded       : 20
+      - No homozygous ref    : 8
+      - No homozygous alt    : 6
+      - No heterozygous      : 6
+  * Processing completed in 0 seconds

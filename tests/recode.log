@@ -1,0 +1,38 @@
+
+[RECODE] Transform genotypes/dosages to dominance encoding
+  * Author        : Frederik Lassen, University of Oxford
+  * Contact       : frederik.heymann@gmail.com
+  * Version       : 1.0.4 / commit = 9dc78df / release = 2026-01-04
+  * Run date      : 04/01/2026 - 11:04:56
+
+Files:
+  * Input         : [tests/test_minor.vcf]
+
+Parameters:
+  * All Info      : No
+  * Min Hom Count : 1
+  * Mode          : dominance
+  * Scale Factor  : 1.000000
+  * Scale Global  : No
+  * Scale Variant : No
+  * Recoding       : [0, 1, 2] -> [-h*a, 2*a*r, -h*r]
+  * Number of passes: 1
+  * Number of samples: 4
+
+Processing variants (single pass)...
+variant 'chr1:T' has 2 (AA) and 0 (aa) homozygous alleles (min required: 1 for minor hom). Skipping..
+variant 'chr1:T' has 0 (AA) and 2 (aa) homozygous alleles (min required: 1 for minor hom). Skipping..
+
+  * Encoding Preview (first 1 variants):
+      Variant          | r      | h      | a      | Raw: aa   | Raw: Aa   | Raw: AA   | Scaled: aa | Scaled: Aa | Scaled: AA
+      -----------------|--------|--------|--------|-----------|-----------|-----------|------------|------------|------------
+      chr1:300:A:T     | 0.2500 | 0.5000 | 0.2500 | -0.125000 | 0.125000  | -0.125000 | -0.125000  | 0.125000   | -0.125000
+
+
+
+Processing complete:
+  * Variants processed       : 3
+  * Variants kept            : 1
+  * Variants discarded       : 2
+      - No homozygous alt    : 2
+  * Processing completed in 0 seconds

@@ -1,0 +1,33 @@
+/* call_chets custom styles */
+
+/* Dark navbar matching Regenie's style */
+.navbar-default {
+    background-color: #343838;
+    border-bottom: 8px #EBF2F2 solid;
+}
+
+/* Clean body styling */
+body {
+    font-size: 16px;
+    line-height: 1.7;
+    color: #343838;
+}
+
+h2 { margin-top: 35px; }
+h1, h2 { font-weight: 700; }
+
+/* Code blocks */
+pre, code { background-color: #FCFDFF; }
+pre > code { font-size: 13px; }
+pre { margin-top: 25px; margin-bottom: 25px; }
+
+/* Sidebar */
+.well { background-color: #FCFDFF; }
+
+/* Table styling */
+.table-striped > tbody > tr:nth-child(2n+1) > td,
+.table-striped > tbody > tr:nth-child(2n+1) > th {
+    background-color: #FCFDFF;
+}
+
+footer > hr { width: 35%; }

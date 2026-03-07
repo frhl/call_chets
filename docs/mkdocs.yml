@@ -1,0 +1,28 @@
+site_name: "arcade"
+copyright: "arcade is licensed under the <a href='https://github.com/frhl/call_chets'>MIT license</a>"
+
+theme:
+  name: cinder
+  custom_dir: docs/custom
+
+extra_css:
+  - custom/style.css
+
+nav:
+  - Home: index.md
+  - Overview: overview.md
+  - Install: install.md
+  - Documentation: options.md
+  - Examples: examples.md
+  - REGENIE: regenie.md
+  - SAIGE: saige.md
+  - F.A.Q.: faq.md
+
+markdown_extensions:
+  - attr_list
+  - footnotes
+  - tables
+  - admonition
+
+plugins:
+  - search

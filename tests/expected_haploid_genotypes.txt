@@ -1,0 +1,2 @@
+SAMPLE4	chr1	GENE2	hom	2
+SAMPLE5	chr1	GENE2	het	1

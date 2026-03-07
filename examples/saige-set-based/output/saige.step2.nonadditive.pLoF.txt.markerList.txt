@@ -1,0 +1,6 @@
+Region	Group	max_MAF	Rare_Variants	Ultra_Rare_Variants
+gene_44	pLoF	0.5	1:45573119:A:T	
+gene_45	pLoF	0.5	1:46591381:A:T	
+gene_53	pLoF	0.5	1:54851871:A:T	
+gene_70	pLoF	0.5	1:72455378:A:T	
+gene_83	pLoF	0.5	1:85914713:A:T	

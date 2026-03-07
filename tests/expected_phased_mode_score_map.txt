@@ -1,0 +1,4 @@
+SAMPLE1	chr1	GENE1	chet	2	g=product	0.4
+SAMPLE2	chr1	GENE1	hom	2	g=product	0.25
+SAMPLE3	chr1	GENE2	chet	2	g=product	0.18
+SAMPLE4	chr2	GENE3	hom	2	g=product	0.36
