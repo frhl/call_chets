@@ -27,7 +27,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install MkDocs and theme
-        run: pip install mkdocs mkdocs-cinder
+        run: pip install mkdocs mkdocs-cinder pymdown-extensions
 
       - name: Build site
         run: cd docs && mkdocs build --strict
