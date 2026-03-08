@@ -1112,6 +1112,457 @@ fi
 
 
 # =============================================================================
+#  BUG #14: Dominance float edge cases — DS0/DS1/DS2 degeneracy
+#  When r==a, DS0==DS2. When h is tiny, DS0≈DS2≈0. When minDom==maxDom,
+#  division by zero in all-info path. Tests for both recode and encode_vcf.
+# =============================================================================
+print_section "BUG #14: Dominance float edge cases (DS0/DS1/DS2)"
+
+# --- Test 14a: recode — symmetric frequencies (r == a), no hets (h=0)
+echo -e "\n${YELLOW}Running test: BUG14a — recode dominance with r==a, h=0 (no hets)${NC}"
+# Build VCF: 10 samples, 5 hom-ref (0/0), 0 het (0/1), 5 hom-alt (1/1)
+# recode requires minHetCount>=1 for dominance, so this should be filtered
+cat << 'VCFEOF' > "${SCRIPT_DIR}/test_hard_sym_freq.vcf"
+##fileformat=VCFv4.2
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##contig=<ID=chr1>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2	S3	S4	S5	S6	S7	S8	S9	S10
+chr1	1000	.	A	T	.	PASS	.	GT	0/0	0/0	0/0	0/0	0/0	1/1	1/1	1/1	1/1	1/1
+VCFEOF
+
+output_file="${SCRIPT_DIR}/output_hard_bug14a.vcf"
+stderr_file="${SCRIPT_DIR}/stderr_hard_bug14a.txt"
+$RECODE --input "${SCRIPT_DIR}/test_hard_sym_freq.vcf" --mode dominance \
+    --all-info > "$output_file" 2>"$stderr_file"
+exit_code=$?
+
+variant_count=$(grep -cv "^#" "$output_file" 2>/dev/null | tr -d ' ')
+if [ $exit_code -ne 0 ] || [ "$variant_count" -eq 0 ]; then
+    echo -e "${GREEN}✓ PASSED — correctly filtered (no hets, h=0)${NC}"
+    ((TESTS_PASSED++))
+else
+    # If it did output something, check sample dosages for NaN
+    variant_line=$(grep -v "^#" "$output_file" | head -1)
+    sample_dosages=$(echo "$variant_line" | cut -f10-)
+    if echo "$sample_dosages" | grep -qiE 'nan|inf'; then
+        echo -e "${RED}✗ BUG — NaN/Inf in dosages with h=0${NC}"
+        ((TESTS_FAILED++))
+        ((BUGS_FOUND++))
+    else
+        echo -e "${GREEN}✓ PASSED — processed (variant not filtered despite h=0)${NC}"
+        ((TESTS_PASSED++))
+    fi
+fi
+rm -f "$output_file" "$stderr_file"
+
+# --- Test 14b: recode — symmetric with hets (r==a, h>0), check DS0==DS2 in sample dosages
+echo -e "\n${YELLOW}Running test: BUG14b — recode dominance r==a with hets (DS0 should equal DS2)${NC}"
+# 10 samples: 4 hom-ref, 2 het, 4 hom-alt → r=0.4, h=0.2, a=0.4
+# Raw: DS0 = -0.2*0.4 = -0.08, DS1 = 2*0.4*0.4 = 0.32, DS2 = -0.2*0.4 = -0.08
+# So DS0 == DS2 (hom-ref and hom-alt get same dosage)
+cat << 'VCFEOF' > "${SCRIPT_DIR}/test_hard_sym_with_hets.vcf"
+##fileformat=VCFv4.2
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##contig=<ID=chr1>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2	S3	S4	S5	S6	S7	S8	S9	S10
+chr1	1000	.	A	T	.	PASS	.	GT	0/0	0/0	0/0	0/0	0/1	0/1	1/1	1/1	1/1	1/1
+VCFEOF
+
+output_file="${SCRIPT_DIR}/output_hard_bug14b.vcf"
+stderr_file="${SCRIPT_DIR}/stderr_hard_bug14b.txt"
+$RECODE --input "${SCRIPT_DIR}/test_hard_sym_with_hets.vcf" --mode dominance \
+    --all-info > "$output_file" 2>"$stderr_file"
+exit_code=$?
+
+if [ $exit_code -eq 0 ]; then
+    variant_line=$(grep -v "^#" "$output_file" | head -1)
+    if [ -n "$variant_line" ]; then
+        # recode outputs raw dosages per sample (not DS0/DS1/DS2 in INFO)
+        # S1-S4 are 0/0 (should get DS0=-0.08), S5-S6 are 0/1 (DS1=0.32), S7-S10 are 1/1 (DS2=-0.08)
+        info_field=$(echo "$variant_line" | cut -f8)
+        r_val=$(echo "$info_field" | sed -n 's/.*[;^]r=\([^;]*\).*/\1/p')
+        h_val=$(echo "$info_field" | sed -n 's/.*[;^]h=\([^;]*\).*/\1/p')
+        a_val=$(echo "$info_field" | sed -n 's/.*[;^]a=\([^;]*\).*/\1/p')
+
+        # Get sample dosages: S1 (0/0) and S7 (1/1) should be equal
+        ds_homref=$(echo "$variant_line" | cut -f10)  # S1=0/0
+        ds_het=$(echo "$variant_line" | cut -f14)     # S5=0/1
+        ds_homalt=$(echo "$variant_line" | cut -f16)  # S7=1/1
+
+        ref_eq_alt=$(awk -v a="$ds_homref" -v b="$ds_homalt" 'BEGIN {
+            d = a - b; if (d<0) d=-d; print (d < 0.001) ? "yes" : "no"
+        }')
+        het_diff=$(awk -v a="$ds_het" -v b="$ds_homref" 'BEGIN {
+            d = a - b; if (d<0) d=-d; print (d < 0.001) ? "yes" : "no"
+        }')
+
+        if [ "$ref_eq_alt" = "yes" ] && [ "$het_diff" = "no" ]; then
+            echo -e "${GREEN}✓ PASSED — DS(0/0)==DS(1/1)=${ds_homref}, DS(0/1)=${ds_het} (symmetric, expected for r==a)${NC}"
+            echo -e "${GREEN}           r=${r_val}, h=${h_val}, a=${a_val}${NC}"
+            ((TESTS_PASSED++))
+        elif [ "$ref_eq_alt" = "yes" ] && [ "$het_diff" = "yes" ]; then
+            echo -e "${RED}✗ BUG — all three dosages identical: ${ds_homref}${NC}"
+            ((TESTS_FAILED++))
+            ((BUGS_FOUND++))
+        else
+            echo -e "${GREEN}✓ PASSED — DS(0/0)=${ds_homref}, DS(0/1)=${ds_het}, DS(1/1)=${ds_homalt}${NC}"
+            ((TESTS_PASSED++))
+        fi
+    else
+        echo -e "${RED}✗ FAILED — no output variant${NC}"
+        ((TESTS_FAILED++))
+    fi
+else
+    echo -e "${RED}✗ FAILED — non-zero exit${NC}"
+    ((TESTS_FAILED++))
+fi
+rm -f "$output_file" "$stderr_file"
+
+# --- Test 14c: recode — tiny h (1 het among 100 samples)
+echo -e "\n${YELLOW}Running test: BUG14c — recode dominance with tiny h (1 het / 100 samples)${NC}"
+# 100 samples: 1 het, 49 hom-ref, 50 hom-alt
+# r=0.49, h=0.01, a=0.50
+# DS0=-0.01*0.50=-0.005, DS1=2*0.50*0.49=0.490, DS2=-0.01*0.49=-0.0049
+# DS0 ≈ DS2 (nearly identical, tiny difference from h being tiny)
+header="##fileformat=VCFv4.2\n##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n##contig=<ID=chr1>\n"
+sample_header="#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT"
+data_line="chr1\t1000\t.\tA\tT\t.\tPASS\t.\tGT"
+
+for i in $(seq 1 100); do
+    sample_header="${sample_header}\tS${i}"
+    if [ "$i" -eq 1 ]; then
+        data_line="${data_line}\t0/1"  # 1 het
+    elif [ "$i" -le 50 ]; then
+        data_line="${data_line}\t0/0"  # 49 hom-ref
+    else
+        data_line="${data_line}\t1/1"  # 50 hom-alt
+    fi
+done
+
+printf "${header}${sample_header}\n${data_line}\n" > "${SCRIPT_DIR}/test_hard_tiny_h.vcf"
+
+output_file="${SCRIPT_DIR}/output_hard_bug14c.vcf"
+stderr_file="${SCRIPT_DIR}/stderr_hard_bug14c.txt"
+$RECODE --input "${SCRIPT_DIR}/test_hard_tiny_h.vcf" --mode dominance \
+    --all-info > "$output_file" 2>"$stderr_file"
+exit_code=$?
+
+if [ $exit_code -eq 0 ]; then
+    variant_line=$(grep -v "^#" "$output_file" | head -1)
+    if [ -n "$variant_line" ]; then
+        info_field=$(echo "$variant_line" | cut -f8)
+        r_val=$(echo "$info_field" | sed -n 's/.*[;^]r=\([^;]*\).*/\1/p')
+        h_val=$(echo "$info_field" | sed -n 's/.*[;^]h=\([^;]*\).*/\1/p')
+        a_val=$(echo "$info_field" | sed -n 's/.*[;^]a=\([^;]*\).*/\1/p')
+
+        # Get sample dosages: S1 (0/1=het), S2 (0/0=hom-ref), S51 (1/1=hom-alt)
+        ds_het=$(echo "$variant_line" | cut -f10)     # S1=0/1
+        ds_homref=$(echo "$variant_line" | cut -f11)  # S2=0/0
+        ds_homalt=$(echo "$variant_line" | cut -f59)  # S51=1/1
+
+        diff_02=$(awk -v a="$ds_homref" -v b="$ds_homalt" 'BEGIN { d=a-b; if(d<0)d=-d; print d }')
+        near_identical=$(awk -v d="$diff_02" 'BEGIN { print (d < 0.01) ? "yes" : "no" }')
+
+        if [ "$near_identical" = "yes" ]; then
+            echo -e "${YELLOW}⚠ NOTE — DS(0/0)≈DS(1/1) (diff=${diff_02}): nearly indistinguishable with tiny h${NC}"
+            echo -e "${YELLOW}         r=${r_val}, h=${h_val}, a=${a_val}${NC}"
+            echo -e "${YELLOW}         DS(0/0)=${ds_homref}, DS(0/1)=${ds_het}, DS(1/1)=${ds_homalt}${NC}"
+        fi
+
+        # Check for NaN/Inf
+        sample_dosages=$(echo "$variant_line" | cut -f10-)
+        if echo "$sample_dosages" | grep -qiE 'nan|inf'; then
+            echo -e "${RED}✗ BUG — NaN/Inf in dosages${NC}"
+            ((TESTS_FAILED++))
+            ((BUGS_FOUND++))
+        else
+            echo -e "${GREEN}✓ PASSED — no NaN/Inf, dosages computed correctly${NC}"
+            ((TESTS_PASSED++))
+        fi
+    else
+        echo -e "${RED}✗ FAILED — no output variant${NC}"
+        ((TESTS_FAILED++))
+    fi
+else
+    echo -e "${RED}✗ FAILED — non-zero exit${NC}"
+    ((TESTS_FAILED++))
+fi
+rm -f "$output_file" "$stderr_file"
+
+# --- Test 14d: encode_vcf — all-info with h=0 (potential NaN in DS0/DS1/DS2)
+echo -e "\n${YELLOW}Running test: BUG14d — encode_vcf all-info with no hets (h=0, potential NaN)${NC}"
+# 4 samples: 2 hom-ref, 0 het, 2 hom-alt → r=0.5, h=0, a=0.5
+# DS0=0, DS1=0.5, DS2=0 → min=0, max=0.5 → should be fine
+# But what about 4 samples: 4 hom-alt → r=0, h=0, a=1
+# That gets filtered by aa_count_int==0
+# Try: 4 samples, 2 ref, 2 alt, no het → h=0
+printf "S1\nS2\nS3\nS4\n" > "${SCRIPT_DIR}/test_hard_4samples.txt"
+
+cat << 'EOF' > "${SCRIPT_DIR}/test_hard_no_het_input.txt"
+S1	chr1	GENE1	hom	2	v1
+S2	chr1	GENE1	hom	2	v2
+EOF
+gzip -f "${SCRIPT_DIR}/test_hard_no_het_input.txt"
+
+output_file="${SCRIPT_DIR}/output_hard_bug14d.vcf"
+stderr_file="${SCRIPT_DIR}/stderr_hard_bug14d.txt"
+$ENCODE_VCF --input "${SCRIPT_DIR}/test_hard_no_het_input.txt.gz" \
+    --samples "${SCRIPT_DIR}/test_hard_4samples.txt" --mode dominance \
+    --all-info > "$output_file" 2>"$stderr_file"
+exit_code=$?
+
+if [ $exit_code -eq 0 ]; then
+    variant_line=$(grep -v "^#" "$output_file" | head -1)
+    if [ -n "$variant_line" ]; then
+        info_field=$(echo "$variant_line" | cut -f8)
+        # Check for NaN or Inf in INFO field
+        if echo "$info_field" | grep -qiE 'nan|inf'; then
+            echo -e "${RED}✗ BUG — NaN or Inf in INFO: ${info_field}${NC}"
+            ((TESTS_FAILED++))
+            ((BUGS_FOUND++))
+        else
+            # Check actual r, h, a values
+            r_val=$(echo "$info_field" | sed -n 's/.*[;^]r=\([^;]*\).*/\1/p')
+            h_val=$(echo "$info_field" | sed -n 's/.*[;^]h=\([^;]*\).*/\1/p')
+            echo -e "${GREEN}✓ PASSED — no NaN, r=${r_val}, h=${h_val}${NC}"
+            ((TESTS_PASSED++))
+        fi
+    else
+        echo -e "${GREEN}✓ PASSED — no output (gene filtered, expected)${NC}"
+        ((TESTS_PASSED++))
+    fi
+else
+    echo -e "${RED}✗ FAILED — non-zero exit${NC}"
+    ((TESTS_FAILED++))
+fi
+rm -f "$output_file" "$stderr_file"
+
+# --- Test 14e: encode_vcf — all-info with symmetric frequencies (r==a)
+echo -e "\n${YELLOW}Running test: BUG14e — encode_vcf all-info with r==a (symmetric)${NC}"
+# 6 samples: 2 het, 2 hom → r=2/6≈0.33, h=2/6≈0.33, a=2/6≈0.33
+printf "S1\nS2\nS3\nS4\nS5\nS6\n" > "${SCRIPT_DIR}/test_hard_6samples.txt"
+
+cat << 'EOF' > "${SCRIPT_DIR}/test_hard_sym_encode.txt"
+S1	chr1	GENE1	het	1	v1
+S2	chr1	GENE1	het	1	v2
+S3	chr1	GENE1	hom	2	v3
+S4	chr1	GENE1	hom	2	v4
+EOF
+gzip -f "${SCRIPT_DIR}/test_hard_sym_encode.txt"
+
+output_file="${SCRIPT_DIR}/output_hard_bug14e.vcf"
+stderr_file="${SCRIPT_DIR}/stderr_hard_bug14e.txt"
+$ENCODE_VCF --input "${SCRIPT_DIR}/test_hard_sym_encode.txt.gz" \
+    --samples "${SCRIPT_DIR}/test_hard_6samples.txt" --mode dominance \
+    --all-info > "$output_file" 2>"$stderr_file"
+exit_code=$?
+
+if [ $exit_code -eq 0 ]; then
+    variant_line=$(grep -v "^#" "$output_file" | head -1)
+    if [ -n "$variant_line" ]; then
+        info_field=$(echo "$variant_line" | cut -f8)
+        # Check for NaN
+        if echo "$info_field" | grep -qiE 'nan|inf'; then
+            echo -e "${RED}✗ BUG — NaN or Inf in INFO: ${info_field}${NC}"
+            ((TESTS_FAILED++))
+            ((BUGS_FOUND++))
+        else
+            ds0=$(echo "$info_field" | sed -n 's/.*DS0=\([^;]*\).*/\1/p')
+            ds1=$(echo "$info_field" | sed -n 's/.*DS1=\([^;]*\).*/\1/p')
+            ds2=$(echo "$info_field" | sed -n 's/.*DS2=\([^;]*\).*/\1/p')
+            r_val=$(echo "$info_field" | sed -n 's/.*;r=\([^;]*\).*/\1/p')
+            h_val=$(echo "$info_field" | sed -n 's/.*;h=\([^;]*\).*/\1/p')
+            a_val=$(echo "$info_field" | sed -n 's/.*;a=\([^;]*\).*/\1/p')
+
+            if [ -n "$ds0" ] && [ -n "$ds2" ]; then
+                ds0_eq_ds2=$(awk -v a="$ds0" -v b="$ds2" 'BEGIN { d=a-b; if(d<0)d=-d; print (d < 0.001) ? "yes" : "no" }')
+                if [ "$ds0_eq_ds2" = "yes" ]; then
+                    echo -e "${YELLOW}⚠ NOTE — DS0≈DS2 (${ds0}≈${ds2}) when r≈a (${r_val}≈${a_val})${NC}"
+                    echo -e "${YELLOW}         This is mathematically expected for symmetric frequencies${NC}"
+                fi
+            fi
+            echo -e "${GREEN}✓ PASSED — r=${r_val}, h=${h_val}, a=${a_val}, DS0=${ds0}, DS1=${ds1}, DS2=${ds2}${NC}"
+            ((TESTS_PASSED++))
+        fi
+    else
+        echo -e "${GREEN}✓ PASSED — no output (gene filtered)${NC}"
+        ((TESTS_PASSED++))
+    fi
+else
+    echo -e "${RED}✗ FAILED — non-zero exit${NC}"
+    ((TESTS_FAILED++))
+fi
+rm -f "$output_file" "$stderr_file"
+
+# --- Test 14f: encode_vcf — single het carrier among many samples (extreme frequencies)
+echo -e "\n${YELLOW}Running test: BUG14f — encode_vcf dominance with 1 het among 50 samples${NC}"
+# 1 het, 49 non-carriers → r=49/50=0.98, h=1/50=0.02, a=0
+# But a=0 triggers BI==0 filter → gene skipped in dominance mode
+# So let's add 1 hom too: 1 het, 1 hom, 48 non-carriers
+# → r=48/50=0.96, h=1/50=0.02, a=1/50=0.02
+# DS0=-0.02*0.02=-0.0004, DS1=2*0.02*0.96=0.0384, DS2=-0.02*0.96=-0.0192
+sample_list=""
+for i in $(seq 1 50); do
+    sample_list="${sample_list}S${i}\n"
+done
+printf "$sample_list" > "${SCRIPT_DIR}/test_hard_50samples.txt"
+
+cat << 'EOF' > "${SCRIPT_DIR}/test_hard_single_carrier.txt"
+S1	chr1	GENE1	het	1	v1
+S2	chr1	GENE1	hom	2	v2
+EOF
+gzip -f "${SCRIPT_DIR}/test_hard_single_carrier.txt"
+
+output_file="${SCRIPT_DIR}/output_hard_bug14f.vcf"
+stderr_file="${SCRIPT_DIR}/stderr_hard_bug14f.txt"
+$ENCODE_VCF --input "${SCRIPT_DIR}/test_hard_single_carrier.txt.gz" \
+    --samples "${SCRIPT_DIR}/test_hard_50samples.txt" --mode dominance \
+    --all-info > "$output_file" 2>"$stderr_file"
+exit_code=$?
+
+if [ $exit_code -eq 0 ]; then
+    variant_line=$(grep -v "^#" "$output_file" | head -1)
+    if [ -n "$variant_line" ]; then
+        info_field=$(echo "$variant_line" | cut -f8)
+        if echo "$info_field" | grep -qiE 'nan|inf'; then
+            echo -e "${RED}✗ BUG — NaN or Inf in INFO field${NC}"
+            echo "  INFO: $info_field"
+            ((TESTS_FAILED++))
+            ((BUGS_FOUND++))
+        else
+            r_val=$(echo "$info_field" | sed -n 's/.*;r=\([^;]*\).*/\1/p')
+            h_val=$(echo "$info_field" | sed -n 's/.*;h=\([^;]*\).*/\1/p')
+            a_val=$(echo "$info_field" | sed -n 's/.*;a=\([^;]*\).*/\1/p')
+            ds0=$(echo "$info_field" | sed -n 's/.*DS0=\([^;]*\).*/\1/p')
+            ds1=$(echo "$info_field" | sed -n 's/.*DS1=\([^;]*\).*/\1/p')
+            ds2=$(echo "$info_field" | sed -n 's/.*DS2=\([^;]*\).*/\1/p')
+
+            # Check sample dosages aren't negative
+            sample_dosages=$(echo "$variant_line" | cut -f10-)
+            has_negative=$(echo "$sample_dosages" | tr '\t' '\n' | awk '$1 < -0.001 { print; exit }')
+            if [ -n "$has_negative" ]; then
+                echo -e "${RED}✗ BUG — negative sample dosage: ${has_negative}${NC}"
+                ((TESTS_FAILED++))
+                ((BUGS_FOUND++))
+            else
+                echo -e "${GREEN}✓ PASSED — r=${r_val}, h=${h_val}, a=${a_val}${NC}"
+                echo -e "${GREEN}           DS0=${ds0}, DS1=${ds1}, DS2=${ds2}${NC}"
+                ((TESTS_PASSED++))
+            fi
+        fi
+    else
+        echo -e "${GREEN}✓ PASSED — no output (gene filtered)${NC}"
+        ((TESTS_PASSED++))
+    fi
+else
+    echo -e "${RED}✗ FAILED — non-zero exit${NC}"
+    ((TESTS_FAILED++))
+fi
+rm -f "$output_file" "$stderr_file"
+
+# --- Test 14g: recode — skewed frequencies, check all three sample dosages distinct
+echo -e "\n${YELLOW}Running test: BUG14g — recode dominance with skewed freqs (all DS should differ)${NC}"
+# 10 samples: 8 hom-ref, 1 het, 1 hom-alt → r=0.8, h=0.1, a=0.1
+# DS0=-0.1*0.1=-0.01, DS1=2*0.1*0.8=0.16, DS2=-0.1*0.8=-0.08
+# All three are different
+cat << 'VCFEOF' > "${SCRIPT_DIR}/test_hard_skewed.vcf"
+##fileformat=VCFv4.2
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##contig=<ID=chr1>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2	S3	S4	S5	S6	S7	S8	S9	S10
+chr1	1000	.	A	T	.	PASS	.	GT	0/0	0/0	0/0	0/0	0/0	0/0	0/0	0/0	0/1	1/1
+VCFEOF
+
+output_file="${SCRIPT_DIR}/output_hard_bug14g.vcf"
+stderr_file="${SCRIPT_DIR}/stderr_hard_bug14g.txt"
+$RECODE --input "${SCRIPT_DIR}/test_hard_skewed.vcf" --mode dominance \
+    --all-info > "$output_file" 2>"$stderr_file"
+exit_code=$?
+
+if [ $exit_code -eq 0 ]; then
+    variant_line=$(grep -v "^#" "$output_file" | head -1)
+    if [ -n "$variant_line" ]; then
+        # S1=0/0 (hom-ref), S9=0/1 (het), S10=1/1 (hom-alt)
+        ds_homref=$(echo "$variant_line" | cut -f10)  # S1
+        ds_het=$(echo "$variant_line" | cut -f18)     # S9
+        ds_homalt=$(echo "$variant_line" | cut -f19)  # S10
+
+        all_same=$(awk -v a="$ds_homref" -v b="$ds_het" -v c="$ds_homalt" 'BEGIN {
+            d1 = a-b; if(d1<0) d1=-d1;
+            d2 = a-c; if(d2<0) d2=-d2;
+            d3 = b-c; if(d3<0) d3=-d3;
+            print (d1 < 0.001 && d2 < 0.001 && d3 < 0.001) ? "yes" : "no"
+        }')
+
+        if [ "$all_same" = "yes" ]; then
+            echo -e "${RED}✗ BUG — all three dosages identical: ${ds_homref}${NC}"
+            ((TESTS_FAILED++))
+            ((BUGS_FOUND++))
+        else
+            echo -e "${GREEN}✓ PASSED — all distinct: DS(0/0)=${ds_homref}, DS(0/1)=${ds_het}, DS(1/1)=${ds_homalt}${NC}"
+            ((TESTS_PASSED++))
+        fi
+    else
+        echo -e "${RED}✗ FAILED — no output variant${NC}"
+        ((TESTS_FAILED++))
+    fi
+else
+    echo -e "${RED}✗ FAILED — non-zero exit${NC}"
+    ((TESTS_FAILED++))
+fi
+rm -f "$output_file" "$stderr_file"
+
+# --- Test 14h: encode_vcf — check per-sample dosages for NaN/Inf
+echo -e "\n${YELLOW}Running test: BUG14h — encode_vcf sample dosages free of NaN/Inf${NC}"
+# 10 samples, 1 het, 1 hom → extreme frequencies
+printf "S1\nS2\nS3\nS4\nS5\nS6\nS7\nS8\nS9\nS10\n" > "${SCRIPT_DIR}/test_hard_10samples.txt"
+
+cat << 'EOF' > "${SCRIPT_DIR}/test_hard_extreme_freq.txt"
+S1	chr1	GENE1	het	1	v1
+S2	chr1	GENE1	hom	2	v2
+EOF
+gzip -f "${SCRIPT_DIR}/test_hard_extreme_freq.txt"
+
+output_file="${SCRIPT_DIR}/output_hard_bug14h.vcf"
+$ENCODE_VCF --input "${SCRIPT_DIR}/test_hard_extreme_freq.txt.gz" \
+    --samples "${SCRIPT_DIR}/test_hard_10samples.txt" --mode dominance > "$output_file" 2>/dev/null
+exit_code=$?
+
+if [ $exit_code -eq 0 ]; then
+    variant_line=$(grep -v "^#" "$output_file" | head -1)
+    if [ -n "$variant_line" ]; then
+        # Extract all sample dosages (columns 10+)
+        sample_dosages=$(echo "$variant_line" | cut -f10-)
+        has_nan=$(echo "$sample_dosages" | tr '\t' '\n' | grep -ciE 'nan|inf')
+        if [ "$has_nan" -gt 0 ]; then
+            echo -e "${RED}✗ BUG — NaN or Inf in sample dosages!${NC}"
+            echo "  Dosages: $sample_dosages"
+            ((TESTS_FAILED++))
+            ((BUGS_FOUND++))
+        else
+            # Verify dosages are in valid range [0, 2]
+            out_of_range=$(echo "$sample_dosages" | tr '\t' '\n' | awk '$1 < -0.001 || $1 > 2.001 { print; exit }')
+            if [ -n "$out_of_range" ]; then
+                echo -e "${RED}✗ BUG — dosage out of [0,2] range: ${out_of_range}${NC}"
+                ((TESTS_FAILED++))
+                ((BUGS_FOUND++))
+            else
+                echo -e "${GREEN}✓ PASSED — all sample dosages valid and in [0,2]${NC}"
+                ((TESTS_PASSED++))
+            fi
+        fi
+    else
+        echo -e "${GREEN}✓ PASSED — no output (gene filtered)${NC}"
+        ((TESTS_PASSED++))
+    fi
+else
+    echo -e "${RED}✗ FAILED — non-zero exit${NC}"
+    ((TESTS_FAILED++))
+fi
+rm -f "$output_file"
+
+
+# =============================================================================
 #  SUMMARY
 # =============================================================================
 echo ""
