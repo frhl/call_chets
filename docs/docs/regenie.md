@@ -1,8 +1,10 @@
 ## REGENIE integration
 
-This page demonstrates variant-level genetic association analysis using [REGENIE](https://github.com/rgcgithub/regenie) with both additive and dominance encodings produced by **arcade**.
+This page demonstrates variant-level genetic association testing using [REGENIE](https://github.com/rgcgithub/regenie) with both additive and non-additive encodings produced by **arcade**.
 
 The full example is in [`examples/regenie-variant-based/`](https://github.com/frhl/call_chets/tree/main/examples/regenie-variant-based).
+
+> **Note**: REGENIE currently supports **variant-level testing only** with arcade's non-additive encodings. For set-based (gene-level) burden testing, see the [SAIGE integration](saige.md).
 
 ### Overview
 
@@ -14,14 +16,12 @@ REGENIE uses a two-step approach:
 This example tests two genetic encodings:
 
 - **Additive**: Standard 0/1/2 genotype encoding
-- **Dominance**: Heterozygote deviation dosages from `recode`
+- **Non-additive**: Heterozygote deviation dosages from `recode`
 
 ### Quick start
 
 ```bash
 cd examples/regenie-variant-based
-
-# Run the complete pipeline
 ./run_all.sh
 ```
 
@@ -39,23 +39,44 @@ Or step by step:
 - **Docker** (REGENIE runs in a container)
 - Docker image: `ghcr.io/rgcgithub/regenie/regenie:v4.1.gz`
 
-### Step 0: Prepare phenotypes
+### Step 1: Encode genotypes with `recode`
 
-REGENIE expects `FID` and `IID` columns. The script reformats the phenotype file:
-
-```bash
-./00_prepare_phenotypes.sh
-```
-
-Output columns: `FID IID phenotype age age2 sex age_sex age2_sex PC1-PC10`
-
-### Step 1: Fit null model
+Create the non-additive VCF from a standard additive VCF:
 
 ```bash
-./01_regenie_step1.sh
+recode \
+    --input simulated.vcf.gz \
+    --mode nonadditive \
+    --scale-per-variant \
+    --min-hom-count 5 \
+    --set-variant-id \
+    --all-info \
+    | bgzip > simulated.nonadditive.vcf.gz
 ```
 
-Key REGENIE parameters:
+Note the use of `--scale-per-variant` for variant-level analysis, which scales each variant's non-additive dosage independently.
+
+### Step 2: Convert to BGEN
+
+REGENIE Step 2 requires BGEN format. Convert both encodings:
+
+**Additive** — standard conversion from VCF `GT` field:
+
+```bash
+plink2 --vcf simulated.vcf.gz \
+    --export bgen-1.3 'bits=16' ref-first
+```
+
+**Non-additive** — uses `DS` field from the `recode`-transformed VCF:
+
+```bash
+plink2 --vcf simulated.nonadditive.vcf.gz dosage=DS \
+    --import-dosage-certainty 1 \
+    --hard-call-threshold 0 \
+    --export bgen-1.3 'bits=16' ref-first
+```
+
+### Step 3: Fit null model
 
 ```bash
 regenie \
@@ -67,52 +88,9 @@ regenie \
     --threads 4
 ```
 
-The genotypes are first filtered to `MAF > 0.01` using PLINK2. This step produces leave-one-chromosome-out (LOCO) predictions for use in Step 2.
+### Step 4: Test variants
 
-### Step 1b: Convert VCF to BGEN
-
-REGENIE Step 2 requires BGEN format. This script converts both encodings:
-
-```bash
-./01b_convert_vcf_to_bgen.sh
-```
-
-**Additive encoding** -- standard conversion from VCF `GT` field:
-
-```bash
-plink2 --vcf simulated.vcf.gz \
-    --export bgen-1.3 'bits=16' ref-first
-```
-
-**Dominance encoding** -- uses `DS` field from the `recode`-transformed VCF:
-
-```bash
-plink2 --vcf simulated.nonadditive.vcf.gz dosage=DS \
-    --import-dosage-certainty 1 \
-    --hard-call-threshold 0 \
-    --export bgen-1.3 'bits=16' ref-first
-```
-
-The dominance VCF is created by `recode`:
-
-```bash
-recode \
-    --input simulated.vcf.gz \
-    --mode nonadditive \
-    --scale-globally \
-    --min-hom-count 5 \
-    --set-variant-id \
-    --all-info \
-    | bgzip > simulated.nonadditive.vcf.gz
-```
-
-### Step 2: Test variants
-
-```bash
-./02_regenie_step2.sh
-```
-
-Both encodings are tested in a loop:
+Both encodings are tested against the same null model:
 
 ```bash
 for encoding in additive dominance; do
@@ -129,35 +107,13 @@ for encoding in additive dominance; do
 done
 ```
 
-### Output format
-
-Association results contain:
-
-```
-CHROM  GENPOS  ID       ALLELE0  ALLELE1  A1FREQ  INFO  N     TEST  BETA   SE     CHISQ  LOG10P
-1      1234    var_0    A        G        0.016   1     5000  ADD   0.123  0.045  7.51   3.45
-```
-
-| Column | Description |
-|--------|-------------|
-| `CHROM` | Chromosome |
-| `GENPOS` | Genomic position |
-| `ID` | Variant ID |
-| `A1FREQ` | Alternate allele frequency |
-| `N` | Sample size |
-| `TEST` | Test performed (`ADD` = additive) |
-| `BETA` | Effect size estimate |
-| `SE` | Standard error |
-| `LOG10P` | -log10(p-value) |
-
 ### Adapting for real data
 
 1. Replace input files with your own PLINK (`.bed/.bim/.fam`) and VCF (`.vcf.gz`) files
-2. Update covariate lists (`covariates` and `cat_covariates` variables in scripts)
+2. Update covariate lists in the scripts
 3. Adjust REGENIE parameters:
     - `--bsize`: Larger values use more memory but may be faster
     - `--minMAC`: Filter out very rare variants
-    - `--bt`: Use for binary traits instead of `--qt`
 
 ### References
 

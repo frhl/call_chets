@@ -46,7 +46,7 @@ interpret_phase \
     > chet_results.txt
 ```
 
-**Step 3: Create dominance pseudo-variant VCF**
+**Step 3: Create non-additive pseudo-variant VCF**
 ```bash
 make_pseudo_vcf \
     --input chet_results.txt \
@@ -73,7 +73,7 @@ Rscript run_gwas.R \
     --out gwas_results
 ```
 
-The GWAS step fits: `Y ~ Additive + Dominance`
+The GWAS step fits: `Y ~ Additive + Non-additive`
 
 ---
 
@@ -89,7 +89,7 @@ interpret_phase \
     > unphased_results.txt
 ```
 
-In unphased mode, `interpret_phase` performs a het/hom burden collapse without distinguishing compound heterozygotes from cis pairs.
+In unphased mode, `interpret_phase` performs a het/hom burden collapse without distinguishing compound heterozygotes from in cis pairs.
 
 ---
 
@@ -101,7 +101,7 @@ In unphased mode, `interpret_phase` performs a het/hom burden collapse without d
 
 The input VCF already contains standard additive genotypes.
 
-**Step 2: Create dominance VCF**
+**Step 2: Create non-additive VCF**
 ```bash
 recode \
     --input phased.vcf.gz \
@@ -123,22 +123,22 @@ Rscript run_gwas.R \
 
 ### GWAS analysis details
 
-The included `run_gwas.R` script performs a joint regression: `Y ~ Additive + Dominance`.
+The included `run_gwas.R` script performs a joint regression: `Y ~ Additive + Non-additive`.
 
 - **Additive VCF**: Standard allele counts (0, 1, 2)
-- **Dominance VCF**: Orthogonalized heterozygote deviation
+- **Non-additive VCF**: Orthogonalized heterozygote deviation
 
-Significant signals in both terms (especially Dominance) indicate non-additive/recessive effects.
+Significant signals in the non-additive term indicate deviations from additivity (e.g. recessive effects).
 
 #### Dose-response estimation
 
-For each variant, the script calculates the estimated genetic effect for dosage levels 0, 1, and 2 by combining the additive and dominance contributions:
+For each variant, the script calculates the estimated genetic effect for dosage levels 0, 1, and 2 by combining the additive and non-additive contributions:
 
 ```
 Effect(d) = Beta_Additive * d + Beta_Dominance * X_d
 ```
 
-Where `X_d` is the dominance encoding value for dosage level `d` (empirically determined from the data).
+Where `X_d` is the non-additive encoding value for dosage level `d` (empirically determined from the data).
 
 Standard errors are calculated by combining the variances of both terms, assuming orthogonality. The output plots visualize these estimates with their 95% confidence intervals, helping to distinguish between additive (linear) and recessive (hockey-stick) architectures.
 
@@ -148,5 +148,5 @@ Standard errors are calculated by combining the variances of both terms, assumin
 
 For complete integration examples with popular GWAS tools, see:
 
-- [**REGENIE** variant-level testing](regenie.md) -- Additive + dominance testing with REGENIE
+- [**REGENIE** variant-level testing](regenie.md) -- Additive + non-additive testing with REGENIE
 - [**SAIGE** set-based testing](saige.md) -- Gene-based burden testing with SAIGE

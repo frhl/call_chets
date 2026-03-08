@@ -13,27 +13,27 @@ Use the **gene-level pipeline** (`interpret_phase` + `make_pseudo_vcf`) when you
 Use the **variant-level pipeline** (`recode`) when you want to:
 
 - Test individual variants for non-additive effects
-- Orthogonalize existing VCFs for dominance deviation analysis
+- Orthogonalize existing VCFs for non-additive analysis
 - Keep variant-level resolution (no gene collapsing)
 
 ---
 
 *What is the difference between `dominance` and `recessive` mode?*
 
-- **Dominance** mode produces an orthogonalized encoding that captures the deviation of heterozygotes from the additive expectation. The encoding is continuous and orthogonal to the additive component, allowing joint testing (`Y ~ Additive + Dominance`).
-- **Recessive** mode produces a binary encoding where only homozygous alternate genotypes have a non-zero value (het=0, hom_alt=2). This directly tests for recessive effects.
+- **Non-additive** (`dominance`) mode produces an orthogonalized encoding that captures the deviation of heterozygotes from the additive expectation. The encoding is continuous and orthogonal to the additive component, allowing joint testing (`Y ~ Additive + Non-additive`).
+- **Recessive** mode produces a binary encoding where only homozygous alternate genotypes have a non-zero value (het=0, hom_alt=2). This directly tests for recessive effects. Note that this encoding is correlated with the additive encoding.
 
 ---
 
 *Can I use arcade with unphased data?*
 
-Yes. Use `interpret_phase --unphased` for the gene-level pipeline. In unphased mode, the tool performs a het/hom burden collapse without distinguishing compound heterozygotes from cis pairs. The variant-level pipeline (`recode`) works with both phased and unphased VCFs.
+Yes. Use `interpret_phase --unphased` for the gene-level pipeline. In unphased mode, the tool performs a het/hom burden collapse without distinguishing compound heterozygotes from in cis pairs. The variant-level pipeline (`recode`) works with both phased and unphased VCFs.
 
 ---
 
 *What is the difference between `--scale-per-variant`, `--scale-globally`, and `--scale-by-group`?*
 
-These options control how the dominance dosages are scaled in `recode`:
+These options control how the non-additive dosages are scaled in `recode`:
 
 - `--scale-per-variant`: Each variant is scaled independently to [0, 2]. Use this for **variant-level** tests where each variant is tested separately.
 - `--scale-globally`: All variants are scaled using the global min/max across the dataset. Use this for **set-based** tests (e.g., SAIGE gene-based) where dosages must be comparable across variants.
@@ -51,9 +51,9 @@ These options control how the dominance dosages are scaled in `recode`:
 
 ---
 
-*Why does the dominance VCF have fewer variants than the additive VCF?*
+*Why does the non-additive VCF have fewer variants than the additive VCF?*
 
-The `recode` tool applies filters (`--min-hom-count`, `--min-het-count`, `--max-maf`) that remove variants with insufficient genotype counts. Dominance encoding requires heterozygous individuals, so very rare variants with no heterozygotes are excluded.
+The `recode` tool applies filters (`--min-hom-count`, `--min-het-count`, `--max-maf`) that remove variants with insufficient genotype counts. Non-additive encoding requires heterozygous individuals, so very rare variants with no heterozygotes are excluded.
 
 ---
 
@@ -73,21 +73,21 @@ This produces space-separated lines: `SAMPLE_ID CHROM:POS:REF:ALT GENOTYPE`
 
 ### GWAS integration
 
-*How do I run a joint additive + dominance test?*
+*How do I run a joint additive + non-additive test?*
 
-Produce both additive and dominance VCFs, then include both as predictors in your association model. For example:
+Produce both additive and non-additive VCFs, then include both as predictors in your association model. For example:
 
 - With **REGENIE**: Run Step 2 separately on each encoding, then combine results
-- With **SAIGE**: Run `step2_SPAtests.R` separately with `--vcfField=GT` (additive) and `--vcfField=DS` (dominance)
-- With **R**: `lm(Y ~ Additive + Dominance)`
+- With **SAIGE**: Run `step2_SPAtests.R` separately with `--vcfField=GT` (additive) and `--vcfField=DS` (non-additive)
+- With **R**: `lm(Y ~ Additive + Non-additive)`
 
-The orthogonalized dominance encoding ensures that the additive and dominance components are independent.
+The orthogonalized non-additive encoding ensures that the additive and non-additive components are independent.
 
 ---
 
 *Should I use `--scale-per-variant` or `--scale-globally` for REGENIE?*
 
-For **variant-level** testing with REGENIE, use `--scale-per-variant`. This scales each variant's dominance dosage independently, which is appropriate when each variant is tested separately.
+For **variant-level** testing with REGENIE, use `--scale-per-variant`. This scales each variant's non-additive dosage independently, which is appropriate when each variant is tested separately.
 
 For **set-based** analysis, use `--scale-globally` so that dosages are comparable across variants within a set.
 

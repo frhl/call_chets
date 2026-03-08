@@ -90,7 +90,7 @@ make_pseudo_vcf --input <file> --samples <file> --mode <mode> [options]
 | Mode | Aliases | Description |
 |------|---------|-------------|
 | `additive` | `012` | Standard 0, 1, 2 dosages |
-| `dominance` | | Orthogonalized heterozygote deviation |
+| `dominance` | | Non-additive: orthogonalized heterozygote deviation |
 | `recessive` | `001` | Recessive encoding (0 and 2 only) |
 
 #### Optional options

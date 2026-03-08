@@ -8,7 +8,7 @@ C++ tools for identifying compound heterozygotes and encoding biallelic variants
 
 - Identify **compound heterozygotes** from phased or unphased genotype data
 - Generate **gene-level pseudo-variant VCFs** for set-based GWAS
-- **Recode** existing VCFs for dominance deviation or recessive analysis
+- **Recode** existing VCFs for non-additive or recessive analysis
 - Output integrates directly with **REGENIE** and **SAIGE**
 
 ---

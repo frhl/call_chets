@@ -1,60 +1,53 @@
 ## SAIGE integration
 
-This page demonstrates set-based (gene-level) genetic association testing using [SAIGE](https://github.com/saigegit/SAIGE) with genotype encodings produced by **arcade**.
+This page demonstrates genetic association testing using [SAIGE](https://github.com/saigegit/SAIGE) with genotype encodings produced by **arcade**. SAIGE supports both **variant-level** and **set-based (gene-level)** testing.
 
 The full example is in [`examples/saige-set-based/`](https://github.com/frhl/call_chets/tree/main/examples/saige-set-based).
 
 ### Overview
 
-The SAIGE pipeline performs:
+The SAIGE pipeline has three main stages:
 
-1. **Simulation** -- Generate realistic genotype data with `msprime`, assign gene structures and variant annotations, simulate phenotypes
-2. **Encoding** -- Use `recode` to produce dominance and recessive VCFs
-3. **Null model** -- Fit SAIGE null model with sparse GRM
-4. **Association testing** -- Run variant-level and gene-based (set-based) burden tests
+1. **Encode** — Use `recode` to produce non-additive and recessive VCFs from a standard additive VCF
+2. **Null model** — Fit SAIGE null model with sparse GRM
+3. **Association testing** — Run variant-level and/or gene-based (set-based) burden tests
 
-This example tests **three genetic encodings**:
+Three genetic encodings are tested:
 
-- **Additive**: Standard 0/1/2 genotype (GT field)
-- **Dominance (non-additive)**: Orthogonalized heterozygote deviation (DS field from `recode`)
-- **Recessive**: Binary recessive encoding, 0/0/2 (DS field from `recode`)
+- **Additive**: Standard 0/1/2 genotype (`GT` field)
+- **Non-additive**: Orthogonalized heterozygote deviation (`DS` field from `recode`)
+- **Recessive**: Binary recessive encoding, 0/0/2 (`DS` field from `recode`)
 
 ### Quick start
 
 ```bash
 cd examples/saige-set-based
 
-# Generate simulated data
-cd simulation/
-./01_simulate.sh
-./02_estimate_pcs.sh
-./03_prepare_saige_inputs.sh
-cd ..
-
 # Encode VCFs
 ./01_encode_vcf.sh
 
-# Run SAIGE
-./03_saige_step0.sh     # Sparse GRM
-./04_saige_step1.sh     # Null model
-./05_saige_step2_variant.sh   # Variant-level tests
-./06_saige_step2_group.sh     # Gene-based tests
+# Prepare variance ratio markers
+./02_prepare_vr.sh
+
+# Run SAIGE pipeline
+./03_saige_step0.sh              # Sparse GRM
+./04_saige_step1.sh              # Null model
+./05_saige_step2_variant.sh      # Variant-level tests
+./06_saige_step2_group.sh        # Gene-based (set-based) tests
 ```
 
 ### Requirements
 
-- **Docker** (SAIGE and PLINK2 run in containers)
-- Docker images:
-    - `wzhou88/saige:0.5.1`
-    - `biocontainer/plink2:alpha2.3_jan2020`
-- **Conda** with `msprime` (for simulation only)
+- **Docker** (SAIGE runs in a container)
+- Docker image: `wzhou88/saige:0.5.1`
 
 ### Step 1: Encode VCFs with `recode`
 
-The encoding step uses `recode` to create dominance and recessive VCFs from the additive input:
+Create non-additive and recessive VCFs from the standard additive input:
+
+**Non-additive encoding:**
 
 ```bash
-# Dominance (non-additive) encoding
 recode \
     --input simulated.vcf.gz \
     --mode nonadditive \
@@ -64,8 +57,11 @@ recode \
     --set-variant-id \
     --all-info \
     | bgzip > simulated.nonadditive.vcf.gz
+```
 
-# Recessive encoding
+**Recessive encoding:**
+
+```bash
 recode \
     --input simulated.vcf.gz \
     --mode recessive \
@@ -74,32 +70,22 @@ recode \
     | bgzip > simulated.recessive.vcf.gz
 ```
 
-Note the use of `--scale-globally` for set-based analysis, which ensures comparable dosages across variants within a gene. For variant-level analysis, use `--scale-per-variant` instead.
+Note the use of `--scale-globally` for the non-additive encoding — this ensures comparable dosages across variants, which is required for set-based analysis. For variant-level only analysis, `--scale-per-variant` is faster.
 
-### Step 2: Sparse GRM
+### Step 2: Fit null model
 
-```bash
-./03_saige_step0.sh
-```
-
-Creates a sparse genetic relationship matrix using 1,000 random markers:
+First create a sparse GRM, then fit the null model:
 
 ```bash
+# Sparse GRM
 createSparseGRM.R \
     --plinkFile=simulated \
     --nThreads=4 \
     --outputPrefix=sparseGRM \
     --numRandomMarkerforSparseKin=1000 \
     --relatednessCutoff=0.125
-```
 
-### Step 3: Fit null model
-
-```bash
-./04_saige_step1.sh
-```
-
-```bash
+# Null model
 step1_fitNULLGLMM.R \
     --plinkFile=simulated_vr \
     --phenoFile=simulated.phenos.with_covariates.tsv \
@@ -113,17 +99,14 @@ step1_fitNULLGLMM.R \
     --isCateVarianceRatio=TRUE
 ```
 
-The variance ratio markers are pre-selected from two MAC categories (10-20 and >=20) by `02_prepare_vr.sh`.
+To test multiple phenotypes, change `--phenoCol` to the column name of the phenotype you wish to test. Each phenotype requires its own null model.
 
-### Step 4: Variant-level association testing
+### Step 3: Variant-level testing
 
-```bash
-./05_saige_step2_variant.sh
-```
+All three encodings are tested against the same null model:
 
-Tests three encodings against the same null model:
+**Additive** (standard `GT` field):
 
-**Additive** (standard GT field):
 ```bash
 step2_SPAtests.R \
     --vcfFile=simulated.vcf.gz \
@@ -132,7 +115,8 @@ step2_SPAtests.R \
     --SAIGEOutputFile=saige.step2.additive.variant.txt
 ```
 
-**Recessive** (DS field, 0/0/2 encoding):
+**Recessive** (`DS` field, 0/0/2 encoding):
+
 ```bash
 step2_SPAtests.R \
     --vcfFile=simulated.recessive.vcf.gz \
@@ -141,7 +125,8 @@ step2_SPAtests.R \
     --SAIGEOutputFile=saige.step2.recessive.variant.txt
 ```
 
-**Non-additive** (DS field, orthogonalized dominance):
+**Non-additive** (`DS` field, orthogonalized):
+
 ```bash
 step2_SPAtests.R \
     --vcfFile=simulated.nonadditive.vcf.gz \
@@ -150,15 +135,12 @@ step2_SPAtests.R \
     --SAIGEOutputFile=saige.step2.nonadditive.variant.txt
 ```
 
-### Step 5: Gene-based (set-based) testing
+### Step 4: Set-based (gene-level) testing
 
-```bash
-./06_saige_step2_group.sh
-```
+Gene-based burden tests use a group file that maps variants to genes with annotations. Both additive and non-additive encodings are tested:
 
-Tests gene-level burden using variant annotation groups (pLoF, synonymous):
+**Additive burden** (`GT` field, all annotations):
 
-**Additive burden** (GT field):
 ```bash
 step2_SPAtests.R \
     --vcfFile=simulated.vcf.gz \
@@ -170,54 +152,41 @@ step2_SPAtests.R \
     --SAIGEOutputFile=saige.step2.additive.group.txt
 ```
 
-**Non-additive burden** (DS field, tested per annotation):
+**Non-additive burden** (`DS` field, tested per annotation):
+
 ```bash
+# pLoF variants
 step2_SPAtests.R \
     --vcfFile=simulated.nonadditive.vcf.gz \
     --vcfField=DS \
     --groupFile=genesets_all.txt \
     --annotation_in_groupTest=pLoF \
+    --maxMAF_in_groupTest=0.50 \
     --r.corr=1 \
     --SAIGEOutputFile=saige.step2.nonadditive.group.pLoF.txt
+
+# Synonymous variants
+step2_SPAtests.R \
+    --vcfFile=simulated.nonadditive.vcf.gz \
+    --vcfField=DS \
+    --groupFile=genesets_all.txt \
+    --annotation_in_groupTest=synonymous \
+    --maxMAF_in_groupTest=0.50 \
+    --r.corr=1 \
+    --SAIGEOutputFile=saige.step2.nonadditive.group.synonymous.txt
 ```
 
-### Simulation details
+> **Note**: For the non-additive encoding, annotations (e.g. pLoF, synonymous) should be tested separately due to a labelling issue in SAIGE when combining annotations with `DS` field input.
 
-The simulation pipeline uses `msprime` to generate realistic population genetic data:
+### Adapting for real data
 
-| Parameter | Default |
-|-----------|---------|
-| Samples | 5,000 diploid individuals |
-| Variants | 1,000 |
-| Variants per gene | 50 (= 20 genes) |
-| MAF range | 1-5% (70% of variants) |
-| Causal gene fraction | 10% |
-| Causal variants per gene | 5 |
-| Heritability (h^2) | 0.1 |
-| Architecture | Additive |
-
-Supported genetic architectures: `additive`, `recessive`, `dominant`.
-
-To customize:
-```bash
-cd simulation/
-conda run -n pop_sim python 01_simulate.py \
-    --n_samples 10000 \
-    --h2 0.2 \
-    --architecture recessive \
-    --seed 123
-```
-
-### Comparison with REGENIE
-
-This example uses the same simulated data as the [REGENIE example](regenie.md), allowing direct comparison:
-
-| Feature | SAIGE (set-based) | REGENIE (variant-level) |
-|---------|-------------------|-------------------------|
-| Test unit | Gene/variant sets | Individual variants |
-| Step 1 | Fit null mixed model | Whole-genome regression |
-| Step 2 | Gene burden tests | Variant association tests |
-| Output | Gene-level p-values | Variant-level p-values |
+1. Replace input VCFs and PLINK files with your own data
+2. Update `--phenoCol` for each phenotype you wish to test — each phenotype needs a separate null model
+3. Update `--covarColList` with your covariates
+4. Prepare a group file mapping variants to genes with annotations for set-based testing
+5. Adjust parameters:
+    - `--minMAC`: Filter out very rare variants
+    - `--maxMAF_in_groupTest`: MAF threshold for set-based tests
 
 ### References
 
