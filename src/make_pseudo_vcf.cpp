@@ -334,6 +334,8 @@ int main(int argc, char *argv[]) {
   int lineCount = 0;
   int matchingSampleCount = 0;
   bool isFirstLine = true;
+  std::set<std::string> seenSampleGene; // Track seen (sample, gene) pairs
+  int duplicateCount = 0;
 
   while (gzgets(longFile, buffer, sizeof(buffer))) {
     lineCount++;
@@ -410,6 +412,22 @@ int main(int argc, char *argv[]) {
     if (mode == "011" && dosage == 2.0f) {
       dosage = 1;
     }
+
+    // Check for duplicate (sample, gene) entries
+    std::string sampleGeneKey = sample + "\t" + gene;
+    if (seenSampleGene.find(sampleGeneKey) != seenSampleGene.end()) {
+      duplicateCount++;
+      if (duplicateCount <= 10) {
+        std::cerr << "Warning: Duplicate entry for sample '" << sample
+                  << "' and gene '" << gene << "' on line " << lineCount
+                  << ". Skipping duplicate." << std::endl;
+      } else if (duplicateCount == 11) {
+        std::cerr << "Warning: Additional duplicate entries found. "
+                     "Suppressing further warnings." << std::endl;
+      }
+      continue;
+    }
+    seenSampleGene.insert(sampleGeneKey);
 
     // count indiviual sites
     if (configuration == "chet") {
@@ -690,6 +708,14 @@ int main(int argc, char *argv[]) {
         // derive reference alleles (homozygous reference count)
         int aa_count_int =
             (currentAN / 2) - (currentCis + currentHet + currentBI);
+
+        // Guard against negative counts (e.g. from data inconsistencies)
+        if (aa_count_int < 0) {
+          std::cerr << "Warning: Negative reference count (" << aa_count_int
+                    << ") for gene " << genePair.first
+                    << ". Clamping to 0." << std::endl;
+          aa_count_int = 0;
+        }
 
         // Skip processing this gene/pseudo-variant if
         // in dominance mode and no homozygotes present (either ref or alt)

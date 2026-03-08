@@ -9,6 +9,27 @@
 
 namespace arcade {
 
+// Read a complete line from a gzFile, handling lines longer than any
+// fixed buffer size by accumulating chunks until a newline is found.
+static std::string gzReadLine(gzFile file, bool &eof) {
+  std::string line;
+  char buf[4096];
+  eof = true;
+  while (gzgets(file, buf, sizeof(buf))) {
+    eof = false;
+    line.append(buf);
+    if (!line.empty() && line.back() == '\n') {
+      line.pop_back();
+      break;
+    }
+  }
+  // Also remove trailing \r for Windows line endings
+  if (!line.empty() && line.back() == '\r') {
+    line.pop_back();
+  }
+  return line;
+}
+
 ChetCaller::ChetCaller()
     : defaultHaplotypeCollapseRule("product"),
       defaultGeneCollapseRule("product"), showHaplotypeScore(false),
@@ -146,7 +167,7 @@ void ChetCaller::printStats() {
 
 bool ChetCaller::isValidVariantFormat(const std::string &variant) {
   static const std::regex pattern(
-      "^(chr)?[0-9XYM]{1,2}:[0-9]+:[ACGT]+:[ACGT]+$");
+      "^(chr)?[0-9XYM]{1,2}:[0-9]+:[ACGTNacgtn.*]+:[ACGTNacgtn.*]+$");
   return std::regex_match(variant, pattern);
 }
 
@@ -172,7 +193,6 @@ bool ChetCaller::loadGeneMap(const std::string &path) {
     return false;
   }
 
-  char buf[4096];
   bool isFirstLineMappingFile = true;
   int mappingLineCount = 0;
   int validMappingLines = 0;
@@ -182,11 +202,11 @@ bool ChetCaller::loadGeneMap(const std::string &path) {
   std::set<std::string> genes;
   std::set<std::string> variants; // Track unique variants in mapping
 
-  while (gzgets(mappingFile, buf, sizeof(buf))) {
+  bool eofMapping = false;
+  while (true) {
+    std::string line = gzReadLine(mappingFile, eofMapping);
+    if (eofMapping && line.empty()) break;
     mappingLineCount++;
-    std::string line(buf);
-    line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
-    line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
 
     if (line.empty())
       continue;
@@ -213,7 +233,18 @@ bool ChetCaller::loadGeneMap(const std::string &path) {
         return false;
       }
     } else {
-      if (!isFirstLineMappingFile) {
+      // Auto-detect header: if this is the first line, check whether it
+      // looks like a header (first field fails variant format validation
+      // or matches common header words) rather than unconditionally
+      // skipping it.
+      bool skipAsHeader = false;
+      if (isFirstLineMappingFile) {
+        if (!isValidVariantFormat(variant)) {
+          skipAsHeader = true;
+        }
+      }
+
+      if (!skipAsHeader) {
         stats.nGeneMapLines++; // Increment total lines processed
         if (!isValidVariantFormat(variant)) {
           invalidFormatVariants++;
@@ -264,16 +295,15 @@ bool ChetCaller::loadInfoMap(const std::string &path) {
   // skipping explicit check for brevity as usage pattern suggests
   // simple read loop is fine usually. But let's check basic read.
 
-  char infoBuf[4096];
   bool isFirstLine = true;
   int infoLineCount = 0;
   int validInfoLines = 0;
 
-  while (gzgets(infoMapFile, infoBuf, sizeof(infoBuf))) {
+  bool eofInfo = false;
+  while (true) {
+    std::string line = gzReadLine(infoMapFile, eofInfo);
+    if (eofInfo && line.empty()) break;
     infoLineCount++;
-    std::string line(infoBuf);
-    line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
-    line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
 
     if (line.empty())
       continue;
@@ -302,7 +332,13 @@ bool ChetCaller::loadInfoMap(const std::string &path) {
         return false;
       }
     } else {
-      if (!isFirstLine) {
+      // Auto-detect header on first line
+      bool skipAsHeader = false;
+      if (isFirstLine && !isValidVariantFormat(variant)) {
+        skipAsHeader = true;
+      }
+
+      if (!skipAsHeader) {
         if (!isValidVariantFormat(variant)) {
           if (verbose) {
             std::cerr << "Warning: Line " << infoLineCount
@@ -334,17 +370,16 @@ bool ChetCaller::loadScoreMap(const std::string &path) {
     return true;
   }
 
-  char pathoBuf[4096];
   bool isFirstLine = true;
   int scoreLineCount = 0;
   int validScoreLines = 0;
   int invalidScoreValues = 0;
 
-  while (gzgets(scoreMapFile, pathoBuf, sizeof(pathoBuf))) {
+  bool eofScore = false;
+  while (true) {
+    std::string line = gzReadLine(scoreMapFile, eofScore);
+    if (eofScore && line.empty()) break;
     scoreLineCount++;
-    std::string line(pathoBuf);
-    line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
-    line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
 
     if (line.empty())
       continue;
@@ -374,7 +409,13 @@ bool ChetCaller::loadScoreMap(const std::string &path) {
         return false;
       }
     } else {
-      if (!isFirstLine) {
+      // Auto-detect header on first line
+      bool skipAsHeader = false;
+      if (isFirstLine && !isValidVariantFormat(variant)) {
+        skipAsHeader = true;
+      }
+
+      if (!skipAsHeader) {
         if (!isValidVariantFormat(variant)) {
           if (verbose) {
             std::cerr << "Warning: Line " << scoreLineCount
@@ -426,7 +467,6 @@ bool ChetCaller::processGenotypes(const std::string &path) {
     return false;
   }
 
-  char buf[4096];
   bool isFirstLine = true;
   int genoLineCount = 0;
   int validGenoLines = 0;
@@ -450,11 +490,11 @@ bool ChetCaller::processGenotypes(const std::string &path) {
 
   std::set<std::string> seenVariants;
 
-  while (gzgets(genotypeFile, buf, sizeof(buf))) {
+  bool eofGeno = false;
+  while (true) {
+    std::string line = gzReadLine(genotypeFile, eofGeno);
+    if (eofGeno && line.empty()) break;
     genoLineCount++;
-    std::string line(buf);
-    line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
-    line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
 
     if (line.empty())
       continue;
