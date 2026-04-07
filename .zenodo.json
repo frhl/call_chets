@@ -1,0 +1,27 @@
+{
+  "title": "ARCADE: Allelic Recoding via Gram-Schmidt for Dominance Effects",
+  "description": "C++ tools for encoding biallelic variants for non-additive genetic association analysis. Integrates with REGENIE and SAIGE.",
+  "license": "MIT",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Lassen, Frederik H.",
+      "affiliation": "University of Oxford"
+    }
+  ],
+  "keywords": [
+    "genetics",
+    "GWAS",
+    "non-additive",
+    "dominance",
+    "compound heterozygote",
+    "bioinformatics"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/frhl/call_chets",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}
