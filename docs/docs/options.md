@@ -90,7 +90,7 @@ make_pseudo_vcf --input <file> --samples <file> --mode <mode> [options]
 | Mode | Aliases | Description |
 |------|---------|-------------|
 | `additive` | `012` | Standard 0, 1, 2 dosages |
-| `dominance` | | Non-additive: orthogonalized heterozygote deviation |
+| `dominance` | `nonadditive` | Non-additive: orthogonalized heterozygote deviation |
 | `recessive` | `001` | Recessive encoding (0 and 2 only) |
 
 #### Optional options
@@ -100,6 +100,11 @@ make_pseudo_vcf --input <file> --samples <file> --mode <mode> [options]
 | `--min-ac` `<n>` | Minimum allele count filter (sum of DS >= n) |
 | `--max-ac` `<n>` | Maximum allele count filter (sum of DS < n) |
 | `--all-info` | Include detailed INFO fields (variant lists, counts) |
+| `--global-dom-dosage` | Use global min/max dominance dosage for scaling |
+| `--no-dosage-scaling` | Disable scaling of dosages to [0, 2] (dominance mode only) |
+| `--scaling-factor` `<f>` | Apply additional scaling factor (default: 1.0) |
+| `--force-chr-out-name` `<name>` | Force output chromosome name |
+| `--suffix` `<str>` | Append suffix to output gene names |
 
 ---
 
@@ -123,7 +128,7 @@ recode --input <file.vcf.gz> [options]
 
 | Option | Description |
 |--------|-------------|
-| `--mode` / `-m` `<mode>` | `dominance` (default) or `recessive` |
+| `--mode` / `-m` `<mode>` | `nonadditive` (default, alias: `dominance`) or `recessive` |
 
 #### Scaling options
 
@@ -134,6 +139,7 @@ Mutually exclusive -- choose one:
 | `--scale-per-variant` | Scale each variant independently to [0, 2]. Use for variant-level tests |
 | `--scale-globally` | Scale using global min/max across all variants. Use for set-based tests |
 | `--scale-by-group` `<file>` | Scale within groups defined by a tab-separated file (variant, gene). Produces comparable betas within genes |
+| `--scale-factor` `<f>` | Apply additional scaling factor (default: 1.0). Can be combined with any scaling option above |
 
 #### Filter options
 
@@ -141,7 +147,10 @@ Mutually exclusive -- choose one:
 |--------|-------------|---------|
 | `--min-hom-count` `<n>` | Minimum minor homozygous count to include variant | 1 |
 | `--min-het-count` `<n>` | Minimum heterozygous count to include variant | 1 |
-| `--max-maf` `<f>` | Maximum minor allele frequency | -- |
+| `--min-aac` / `--max-aac` `<n>` | Min/max alternate allele count | -- |
+| `--min-mac` / `--max-mac` `<n>` | Min/max minor allele count | -- |
+| `--min-aaf` / `--max-aaf` `<f>` | Min/max alternate allele frequency | -- |
+| `--min-maf` / `--max-maf` `<f>` | Min/max minor allele frequency | -- |
 
 #### Other options
 
@@ -150,26 +159,3 @@ Mutually exclusive -- choose one:
 | `--set-variant-id` | Set variant IDs to `chr:pos:ref:alt` format |
 | `--all-info` | Include frequency/scaling info in INFO fields |
 
----
-
-### `filter_pp`
-
-Filters VCF genotypes by posterior probability threshold. Genotypes below the threshold are set to missing.
-
-#### Usage
-
-```bash
-filter_pp --input <file.vcf.gz> --threshold <value>
-```
-
----
-
-### `count_by_gene`
-
-Counts genotypes per gene from a VCF and variant-to-gene mapping file.
-
-#### Usage
-
-```bash
-count_by_gene --input <file.vcf.gz> --gene-map <file>
-```

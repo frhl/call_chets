@@ -48,7 +48,7 @@ $$
 Applying the **Gram-Schmidt process** to orthogonalize these vectors yields the non-additive encoding:
 
 $$
-X^D = \frac{1}{\sqrt{har(a + r - (a - r)^2)}}
+X^D = \frac{1}{\sqrt{h \cdot a \cdot r \cdot \bigl(a + r - (a - r)^2\bigr)}}
 \begin{bmatrix}
 -ha\\
 2ar\\
@@ -104,8 +104,6 @@ VCF → recode → GWAS
 | `interpret_phase` | Identify compound heterozygous and homozygous variants from phased (or unphased) genotypes within gene regions |
 | `make_pseudo_vcf` | Convert `interpret_phase` output into pseudo-variant biallelic VCFs with additive, non-additive, or recessive dosage encodings |
 | `recode` | Orthogonalize or recode existing VCFs for non-additive or recessive genotype encodings |
-| `filter_pp` | Filter VCF genotypes by posterior probability threshold |
-| `count_by_gene` | Count genotypes per gene from a VCF and mapping file |
 
 ### Downstream integration
 

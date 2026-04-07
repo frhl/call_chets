@@ -20,7 +20,7 @@ Use the **variant-level pipeline** (`recode`) when you want to:
 
 *What is the difference between `dominance` and `recessive` mode?*
 
-- **Non-additive** (`dominance`) mode produces an orthogonalized encoding that captures the deviation of heterozygotes from the additive expectation. The encoding is continuous and orthogonal to the additive component, allowing joint testing (`Y ~ Additive + Non-additive`).
+- **Non-additive** (`nonadditive` / `dominance`) mode produces an orthogonalized encoding that captures the deviation of heterozygotes from the additive expectation. The encoding is continuous and orthogonal to the additive component, allowing joint testing (`Y ~ Additive + Non-additive`).
 - **Recessive** mode produces a binary encoding where only homozygous alternate genotypes have a non-zero value (het=0, hom_alt=2). This directly tests for recessive effects. Note that this encoding is correlated with the additive encoding.
 
 ---
@@ -53,7 +53,7 @@ These options control how the non-additive dosages are scaled in `recode`:
 
 *Why does the non-additive VCF have fewer variants than the additive VCF?*
 
-The `recode` tool applies filters (`--min-hom-count`, `--min-het-count`, `--max-maf`) that remove variants with insufficient genotype counts. Non-additive encoding requires heterozygous individuals, so very rare variants with no heterozygotes are excluded.
+The `recode` tool applies filters (`--min-hom-count`, `--min-het-count`, `--max-maf`) that remove variants with insufficient genotype counts. Non-additive encoding requires both heterozygous and homozygous individuals. Variants failing `--min-het-count` (default: 1) or `--min-hom-count` (default: 1) are excluded.
 
 ---
 

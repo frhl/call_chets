@@ -58,8 +58,6 @@ This installs the following executables to `/usr/local/bin`:
 | `interpret_phase` | Compound heterozygote caller |
 | `make_pseudo_vcf` | Pseudo-variant VCF generator |
 | `recode` | Genotype recoder/orthogonalizer |
-| `filter_pp` | Posterior probability filter |
-| `count_by_gene` | Per-gene genotype counter |
 
 To install to a custom location:
 ```bash

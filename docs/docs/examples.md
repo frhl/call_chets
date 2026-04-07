@@ -51,7 +51,7 @@ interpret_phase \
 make_pseudo_vcf \
     --input chet_results.txt \
     --samples samples.txt \
-    --mode dominance \
+    --mode nonadditive \
     | bgzip > encoded_dominance.vcf.gz
 ```
 
@@ -105,7 +105,7 @@ The input VCF already contains standard additive genotypes.
 ```bash
 recode \
     --input phased.vcf.gz \
-    --mode dominance \
+    --mode nonadditive \
     --scale-per-variant \
     | bgzip > encoded_dominance.vcf.gz
 ```
