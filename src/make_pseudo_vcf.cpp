@@ -326,20 +326,18 @@ int main(int argc, char *argv[]) {
   std::map<std::string, int> geneCis;
 
   // Process long format file
-  std::string line, sample, chromosome, gene, configuration;
   std::set<std::string> contigs;
-  char buffer[4096];
-  float dosage;
-  std::string variantInfo;
   int lineCount = 0;
   int matchingSampleCount = 0;
-  bool isFirstLine = true;
   std::set<std::string> seenSampleGene; // Track seen (sample, gene) pairs
   int duplicateCount = 0;
+  char buffer[4096];
 
   while (gzgets(longFile, buffer, sizeof(buffer))) {
     lineCount++;
     std::string line(buffer);
+    std::string sample, chromosome, gene, configuration, variantInfo;
+    float dosage;
     std::istringstream iss(line);
 
     // Check for empty lines or comment lines

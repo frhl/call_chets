@@ -101,11 +101,11 @@ int main(int argc, char *argv[]) {
   }
 
   char buf[1024];
-  std::string variant, gene;
   std::map<std::string, std::vector<std::string>> variantToGene;
   bool isFirstLineMappingFile = true;
   while (gzgets(mappingFile, buf, sizeof(buf))) {
     std::stringstream ss(buf);
+    std::string variant, gene;
     ss >> variant >> gene;
 
     if (ss.fail() || variant.empty() || gene.empty()) {

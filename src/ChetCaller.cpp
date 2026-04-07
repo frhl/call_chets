@@ -458,8 +458,6 @@ bool ChetCaller::loadScoreMap(const std::string &path) {
 
 bool ChetCaller::processGenotypes(const std::string &path) {
   // Start timing VCF parse
-  clock_t start = clock();
-
   gzFile genotypeFile = gzopen(path.c_str(), "rb");
   if (!genotypeFile) {
     std::cerr << "Error: Cannot open --geno file for reading: " << path
@@ -470,7 +468,6 @@ bool ChetCaller::processGenotypes(const std::string &path) {
   bool isFirstLine = true;
   int genoLineCount = 0;
   int validGenoLines = 0;
-  int skippedGenoLines = 0;
   int invalidFormatGenoVariants = 0;
   int invalidGenotypeFormat = 0;
 
@@ -511,7 +508,6 @@ bool ChetCaller::processGenotypes(const std::string &path) {
       std::cerr << "Error: Line " << genoLineCount
                 << " in genotype file has fewer than required 3 columns: '"
                 << line << "'" << std::endl;
-      skippedGenoLines++;
       continue;
     }
 
@@ -603,7 +599,6 @@ bool ChetCaller::processGenotypes(const std::string &path) {
                      "Suppressing further warnings."
                   << std::endl;
       }
-      skippedGenoLines++;
 
       // Track unphased variants in phased mode
       if (variantToGene.find(variant) != variantToGene.end()) {
@@ -655,7 +650,6 @@ bool ChetCaller::processGenotypes(const std::string &path) {
       }
       // We skip non-het/hom-alt lines for actual calling per original
       // logic
-      skippedGenoLines++;
       continue;
     }
 

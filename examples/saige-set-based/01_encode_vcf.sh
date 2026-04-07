@@ -15,7 +15,7 @@ OUTPUT_NONADD="input/simulated.nonadditive.vcf.gz"
 # Convert to nonadditive encoding using Docker 
 # note: need to --scale-per-variant if only interested in variant-level results (faster)
 # whereas --scale-globally is required when doing set-based analysis.
-docker run --rm -v "$(pwd):/data" fhlassen/arcade:1.0.13 \
+docker run --rm -v "$(pwd):/data" fhlassen/arcade:1.0.16 \
     ./bin/recode \
         --input "/data/${INPUT}" \
         --mode nonadditive \
@@ -35,7 +35,7 @@ INPUT="input/simulated.vcf.gz"
 OUTPUT_RECESSIVE="input/simulated.recessive.vcf.gz"
 
 # Encode [0,1,2]->[0,0,2] using Docker 
-docker run --rm -v "$(pwd):/data" fhlassen/arcade:1.0.13 \
+docker run --rm -v "$(pwd):/data" fhlassen/arcade:1.0.16 \
     ./bin/recode \
         --input "/data/${INPUT}" \
         --mode recessive \

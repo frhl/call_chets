@@ -20,6 +20,9 @@ examples/regenie-variant-based/output/
 # MkDocs build output
 docs/site/
 
+# Local notes
+BIOCONDA.md
+
 # OS / editor junk
 .DS_Store
 .Rhistory

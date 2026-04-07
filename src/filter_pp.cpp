@@ -179,7 +179,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Write the processed record to output file
-    bcf_write(outFile.get(), hdr.get(), rec.get());
+    (void)bcf_write(outFile.get(), hdr.get(), rec.get());
   }
 
   std::cerr << "Total genotypes set to missing: " << missing_count << std::endl;

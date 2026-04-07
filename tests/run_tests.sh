@@ -177,9 +177,7 @@ run_failing_test_custom_map "error_gene_map_wrong_columns" "genotypes_phased.txt
 
 echo ""
 
-echo "======================================
-
-"
+echo "======================================"
 echo "  Test Summary"
 echo "======================================"
 echo -e "${GREEN}Tests passed: ${TESTS_PASSED}${NC}"

@@ -32,7 +32,7 @@ struct VariantEncodingExample {
 // Print variant encoding preview to stderr
 void printVariantEncodingPreview(
     const std::vector<VariantEncodingExample> &examples,
-    const std::string &scalingMode, bool hasMore) {
+    const std::string & /*scalingMode*/, bool hasMore) {
   if (examples.empty())
     return;
 
@@ -446,9 +446,9 @@ void calculateGlobalAndGroupDosages(
 
 void printHeader(const bcf_hdr_t *hdr,
                  const std::vector<std::string> &sortedContigs,
-                 const std::string &mode, double globalMinDomDosage,
-                 double globalMaxDomDosage, bool allInfo, bool scalePerVariant,
-                 bool scaleGlobally, bool scaleByGroup) {
+                 const std::string &mode, double /*globalMinDomDosage*/,
+                 double /*globalMaxDomDosage*/, bool allInfo,
+                 bool scalePerVariant, bool scaleGlobally, bool scaleByGroup) {
   int n_samples = bcf_hdr_nsamples(hdr);
 
   std::cout << "##fileformat=VCFv4.2\n";
@@ -835,7 +835,7 @@ void processVariant(
 
   // --- Preview Logic ---
   if (mode == "dominance" && !previewPrinted &&
-      encodingExamples.size() < MAX_EXAMPLES) {
+      static_cast<int>(encodingExamples.size()) < MAX_EXAMPLES) {
     VariantEncodingExample ex;
     ex.variantId = variantId;
     ex.r = r;
