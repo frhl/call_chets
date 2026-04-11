@@ -3,6 +3,7 @@
 [![Tests](https://github.com/frhl/call_chets/actions/workflows/tests.yml/badge.svg)](https://github.com/frhl/call_chets/actions/workflows/tests.yml)
 [![Docker](https://github.com/frhl/call_chets/actions/workflows/docker-image.yml/badge.svg)](https://github.com/frhl/call_chets/actions/workflows/docker-image.yml)
 [![DOI](https://zenodo.org/badge/1175266044.svg)](https://doi.org/10.5281/zenodo.19456495)
+[![Bioconda](https://img.shields.io/conda/vn/bioconda/arcade.svg)](https://bioconda.github.io/recipes/arcade/README.html)
 
 **ARCADE** — Allelic Recoding via gram-sChmidt for Dominance Effects
 
